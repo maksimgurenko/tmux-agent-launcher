@@ -1,0 +1,35 @@
+# Defaults work without a config file. Argument arrays are never shell-evaluated.
+picker = "rofi"
+terminal = "kitty"
+presentation = "float"
+
+[search]
+roots = ["~"]
+mode = "git" # "all" makes all directories eligible.
+exclude = [".git", ".cache", "node_modules", ".venv", "target"]
+
+[profiles.codex]
+label = "Codex"
+command = ["codex", "--yolo"]
+
+[profiles.claude]
+label = "Claude"
+command = ["claude", "--dangerously-skip-permissions"]
+
+[profiles.pi]
+label = "Pi"
+command = ["pi", "--approve"]
+
+[profiles.opencode]
+label = "OpenCode"
+command = ["opencode", "--auto"]
+
+[profiles.codex-fast]
+label = "Codex (custom)"
+enabled = false
+command = ["codex", "--yolo"]
+env = { EXAMPLE_SETTING = "value" }
+
+# Set terminal = "custom" after adapting this example.
+[terminals.custom]
+command = ["other-terminal", "--app-id", "{app_id}", "--", "{command}"]
