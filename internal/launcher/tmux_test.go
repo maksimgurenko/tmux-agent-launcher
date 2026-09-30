@@ -1,4 +1,4 @@
-package main
+package launcher
 
 import (
 	"context"
@@ -20,7 +20,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	testLauncher = filepath.Join(dir, "launcher")
-	b, err := exec.Command("go", "build", "-trimpath", "-buildvcs=false", "-o", testLauncher, ".").CombinedOutput()
+	b, err := exec.Command("go", "build", "-trimpath", "-buildvcs=false", "-o", testLauncher, "../../cmd/tmux-agent-launcher").CombinedOutput()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "build test launcher: %s %v\n", b, err)
 		os.RemoveAll(dir)

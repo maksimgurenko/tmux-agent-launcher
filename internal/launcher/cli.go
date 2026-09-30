@@ -1,4 +1,4 @@
-package main
+package launcher
 
 import (
 	"context"
@@ -19,7 +19,7 @@ var publicBase = "unpublished"
 var sourceDigest = "unknown"
 var sourceDirty = "true"
 
-//go:embed examples/config.toml
+//go:embed default-config.toml
 var exampleConfig []byte
 
 type rootsFlag []string
@@ -77,7 +77,9 @@ func applyOptions(c *Config, o options) {
 		c.Search.Roots = o.roots
 	}
 }
-func main() {
+
+// Main runs the launcher command.
+func Main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := run(ctx, os.Args[1:]); err != nil && !errors.Is(err, errCancelled) && !errors.Is(err, context.Canceled) && !errors.Is(err, flag.ErrHelp) {
