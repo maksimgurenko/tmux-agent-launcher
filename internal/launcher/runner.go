@@ -45,6 +45,17 @@ func envValue(env []string, key string) string {
 	}
 	return ""
 }
+func projectDependentExecutable(name string, env []string) bool {
+	if strings.ContainsRune(name, '/') {
+		return !filepath.IsAbs(name)
+	}
+	for _, path := range filepath.SplitList(envValue(env, "PATH")) {
+		if !filepath.IsAbs(path) {
+			return true
+		}
+	}
+	return false
+}
 func resolveExecutable(name string, env []string, dir string) (string, error) {
 	var candidates []string
 	if strings.ContainsRune(name, '/') {
@@ -104,16 +115,18 @@ func runAgent(path string) error {
 	if err := os.Chdir(p.Directory); err != nil {
 		return err
 	}
-	// Retain tmux's own environment entries; the launch snapshot overlays them.
-	overrides := map[string]string{}
+	// The caller's snapshot is authoritative; the older server environment may
+	// contain variables that the caller has since removed.
+	env := append([]string{}, p.Env...)
+	keys := map[string]bool{}
 	for _, entry := range p.Env {
-		if k, v, ok := strings.Cut(entry, "="); ok {
-			overrides[k] = v
+		if k, _, ok := strings.Cut(entry, "="); ok {
+			keys[k] = true
 		}
 	}
-	env := agentEnv(os.Environ(), overrides)
-	for _, k := range []string{"TMUX", "TMUX_PANE"} {
-		if _, ok := overrides[k]; !ok {
+	// A desktop launch may have no TERM until tmux creates its terminal.
+	for _, k := range []string{"TMUX", "TMUX_PANE", "TERM"} {
+		if !keys[k] {
 			if v := os.Getenv(k); v != "" {
 				env = append(env, k+"="+v)
 			}

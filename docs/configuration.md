@@ -47,6 +47,8 @@ enabled = false
 
 IDs allow letters, digits, underscores and hyphens. An added profile requires a nonempty command array; its label defaults to its ID, and `enabled` defaults to true. Omitted preset fields remain intact. Command arrays replace the whole command, with each argument represented separately. Environment maps replace that profile's configured map and override inherited values for the agent process. Credentials and native agent settings stay with the agent CLI or inherited environment.
 
+Each new agent receives the launcher's current environment snapshot plus its profile overrides and tmux connection variables. If the snapshot omits TERM, the agent receives tmux's terminal type. Unrelated variables removed from the launcher environment are not restored from an older tmux server. Relative commands and relative or empty PATH entries resolve against the selected project directory. The menu and `doctor` defer these executable checks until a project is selected.
+
 `codex-work` gets distinct sessions from `codex`, even when both launch the same CLI. Disabling/removing a profile or uninstalling its executable does not hide its live sessions.
 
 ## Search roots

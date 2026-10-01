@@ -18,9 +18,9 @@ The implementation stays in one internal Go package because these components ser
 ## Launch flow
 
 1. Merge built-in defaults, the selected TOML file and explicit CLI options; reject unknown keys and invalid values.
-2. Offer managed live sessions and new-session actions for enabled profiles with available executables. Selecting a live session skips discovery and does not require its original profile or executable.
+2. Offer managed live sessions and new-session actions for enabled profiles with available executables; defer project-dependent executable checks until a project is selected. Selecting a live session skips discovery and does not require its original profile or executable.
 3. Discover eligible directories beneath search roots, or accept `--directory` with an explicit profile. Canonicalize directory aliases before computing session identity.
-4. Lock that profile/directory identity and check again for an existing session. Concurrent launches reuse one session.
+4. Lock that profile/directory identity on the canonical tmux socket path and check again for an existing session. Concurrent launches through equivalent server connections reuse one session.
 5. For a new session, start the same executable as a short-lived runner. It reads a restricted launch snapshot, removes the snapshot, changes directory and replaces itself with the native agent process.
 6. Attach by stable tmux session ID, retaining the selected tmux socket. A new terminal receives the attachment command as arguments.
 

@@ -43,6 +43,153 @@ func disposableTmux(t *testing.T) Tmux {
 	t.Cleanup(func() { tm.output(context.Background(), "kill-server") })
 	return tm
 }
+
+func waitProof(t *testing.T, path string) string {
+	t.Helper()
+	for i := 0; i < 200; i++ {
+		if b, err := os.ReadFile(path); err == nil {
+			return string(b)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("agent did not write proof")
+	return ""
+}
+
+func TestTmuxLaunchSnapshotDoesNotRestoreServerEnvironment(t *testing.T) {
+	tm := disposableTmux(t)
+	ctx := context.Background()
+	if _, err := tm.output(ctx, "new-session", "-d", "-s", "fixture", "/bin/sleep", "60"); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range [][2]string{{"LAUNCHER_REMOVED_FIXTURE", "stale"}, {"LAUNCHER_CURRENT_FIXTURE", "server"}} {
+		if _, err := tm.output(ctx, "set-environment", "-g", entry[0], entry[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("LAUNCHER_REMOVED_FIXTURE", "")
+	if err := os.Unsetenv("LAUNCHER_REMOVED_FIXTURE"); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LAUNCHER_CURRENT_FIXTURE", "caller")
+	t.Setenv("TERM", "")
+	if err := os.Unsetenv("TERM"); err != nil {
+		t.Fatal(err)
+	}
+	terminal, err := tm.output(ctx, "show-options", "-gv", "default-terminal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := t.TempDir()
+	c := defaults()
+	c.Profiles["test"] = Profile{Command: []string{"/bin/sh", "-c", "printf '%s\\n' \"${LAUNCHER_REMOVED_FIXTURE+present}\" \"$LAUNCHER_CURRENT_FIXTURE\" \"$LAUNCHER_OVERRIDE_FIXTURE\" \"$TMUX\" \"$TMUX_PANE\" \"$TERM\" > proof.tmp; /bin/mv proof.tmp proof; exec /bin/sleep 60"}, Env: map[string]string{"LAUNCHER_OVERRIDE_FIXTURE": "profile"}}
+	if _, err := tm.ensure(ctx, c, "test", project, testLauncher); err != nil {
+		t.Fatal(err)
+	}
+	proof := strings.Split(strings.TrimSuffix(waitProof(t, filepath.Join(project, "proof")), "\n"), "\n")
+	if len(proof) != 6 || proof[0] != "" || proof[1] != "caller" || proof[2] != "profile" || !strings.HasPrefix(proof[3], tm.Prefix[1]+",") || !strings.HasPrefix(proof[4], "%") || proof[5] != terminal {
+		t.Fatalf("snapshot or tmux environment lost: %q", proof)
+	}
+}
+
+func TestTmuxSocketIdentityBeforeServerCreation(t *testing.T) {
+	root := t.TempDir()
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TMUX_TMPDIR", alias)
+	t.Setenv("TMUX", "")
+	socket := filepath.Join(root, fmt.Sprintf("tmux-%d", os.Getuid()), "default")
+	for _, connection := range []Tmux{
+		{},
+		{Prefix: []string{"-S", socket}},
+		{Prefix: []string{"-L", "default", "-f", "fixture.conf"}},
+		{Prefix: []string{"-S", filepath.Join(alias, fmt.Sprintf("tmux-%d", os.Getuid()), "default")}},
+	} {
+		if got, err := connection.socketIdentity(); err != nil || got != socket {
+			t.Fatalf("equivalent socket identity %q: %q %v", connection.Prefix, got, err)
+		}
+	}
+	t.Setenv("TMUX", filepath.Join(root, "inherited")+",0,0")
+	if got, err := (Tmux{}).socketIdentity(); err != nil || got != filepath.Join(root, "inherited") {
+		t.Fatalf("inherited socket identity: %q %v", got, err)
+	}
+	if got, err := (Tmux{Prefix: []string{"-L", "default"}}).socketIdentity(); err != nil || got != socket {
+		t.Fatalf("socket label did not override TMUX: %q %v", got, err)
+	}
+	if got, err := (Tmux{Prefix: []string{"-S", socket, "-L", "other"}}).socketIdentity(); err != nil || got != socket {
+		t.Fatalf("socket path did not override label/TMUX: %q %v", got, err)
+	}
+}
+
+func TestTmuxEquivalentServerConnectionsConcurrentCreation(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("TMUX_TMPDIR", root)
+	t.Setenv("TMUX", "")
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	socketDir := filepath.Join(root, fmt.Sprintf("tmux-%d", os.Getuid()))
+	if err := os.Mkdir(socketDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(socketDir, alias); err != nil {
+		t.Fatal(err)
+	}
+	tm := Tmux{Prefix: []string{"-f", "/dev/null"}}
+	if err := tm.checkVersion(context.Background()); err != nil {
+		if os.Getenv("REQUIRE_TMUX") == "1" {
+			t.Fatal(err)
+		}
+		t.Skip(err)
+	}
+	t.Cleanup(func() { tm.output(context.Background(), "kill-server") })
+	connections := []Tmux{tm,
+		{Prefix: []string{"-S", filepath.Join(socketDir, "default"), "-f", "/dev/null"}},
+		{Prefix: []string{"-L", "default", "-f", "/dev/null"}},
+		{Prefix: []string{"-S", filepath.Join(alias, "default"), "-f", "/dev/null"}},
+	}
+	c := defaults()
+	c.Profiles["test"] = Profile{Command: []string{"/bin/sleep", "60"}}
+	for attempt := 0; attempt < 6; attempt++ {
+		project := t.TempDir()
+		start := make(chan struct{})
+		type result struct {
+			session Session
+			err     error
+		}
+		results := make(chan result, len(connections)*2)
+		for i := 0; i < cap(results); i++ {
+			connection := connections[i%len(connections)]
+			go func() {
+				<-start
+				s, err := connection.ensure(context.Background(), c, "test", project, testLauncher)
+				results <- result{s, err}
+			}()
+		}
+		close(start)
+		id := ""
+		failed := false
+		for i := 0; i < cap(results); i++ {
+			r := <-results
+			if r.err != nil {
+				t.Errorf("equivalent connection failed on attempt %d: %v", attempt, r.err)
+				failed = true
+				continue
+			}
+			if id != "" && r.session.ID != id {
+				t.Errorf("equivalent connections created distinct sessions: %s %s", id, r.session.ID)
+				failed = true
+			}
+			id = r.session.ID
+		}
+		if failed {
+			t.FailNow()
+		}
+		// Exercise default selection through the inherited TMUX connection too.
+		t.Setenv("TMUX", filepath.Join(alias, "default")+",0,0")
+	}
+}
 func TestTmuxLiteralIdentityConcurrentCreationAndDetachedProfiles(t *testing.T) {
 	tm := disposableTmux(t)
 	ctx := context.Background()
@@ -158,5 +305,41 @@ func TestInteractiveProfileSurvivesProjectSelection(t *testing.T) {
 	s, err := chooseSession(context.Background(), c, tm, "", testLauncher)
 	if err != nil || s.Profile != "second" || s.Project != dir {
 		t.Fatalf("selected profile changed: %v %v", s, err)
+	}
+}
+
+func TestInteractiveProjectDependentExecutables(t *testing.T) {
+	for _, fixture := range []struct {
+		name, command, path, executable string
+	}{
+		{"relative command", "./agent", "/bin", "agent"},
+		{"relative PATH", "agent", "bin", "bin/agent"},
+		{"empty PATH entry", "agent", ":/nonexistent", "agent"},
+	} {
+		t.Run(fixture.name, func(t *testing.T) {
+			tm := disposableTmux(t)
+			tools, project := t.TempDir(), t.TempDir()
+			if err := os.WriteFile(filepath.Join(tools, "rofi"), []byte("#!/bin/sh\ncat >/dev/null\necho 0\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", tools+":"+os.Getenv("PATH"))
+			path := filepath.Join(project, fixture.executable)
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("#!/bin/sh\nprintf fixture > proof.tmp\n/bin/mv proof.tmp proof\nexec /bin/sleep 60\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			c := defaults()
+			c.Profiles = map[string]Profile{"local": {Command: []string{fixture.command}, Env: map[string]string{"PATH": fixture.path}}}
+			c.Search = Search{Roots: []string{project}, Mode: "all"}
+			s, err := chooseSession(context.Background(), c, tm, "", testLauncher)
+			if err != nil || s.Profile != "local" || s.Project != project {
+				t.Fatalf("project-dependent profile disappeared: %v %v", s, err)
+			}
+			if proof := waitProof(t, filepath.Join(project, "proof")); proof != "fixture" {
+				t.Fatalf("project executable did not run: %q", proof)
+			}
+		})
 	}
 }

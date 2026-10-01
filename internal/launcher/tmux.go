@@ -122,11 +122,69 @@ func findSession(sessions []Session, profile, project string) (Session, bool) {
 	}
 	return Session{}, false
 }
+
+func (t Tmux) socketIdentity() (string, error) {
+	var socket, label string
+	for i := 0; i < len(t.Prefix); i++ {
+		switch t.Prefix[i] {
+		case "-S", "-L", "-f", "-T", "-c":
+			if i+1 == len(t.Prefix) {
+				return "", fmt.Errorf("missing tmux option value")
+			}
+			if t.Prefix[i] == "-S" {
+				socket = t.Prefix[i+1]
+			} else if t.Prefix[i] == "-L" {
+				label = t.Prefix[i+1]
+			}
+			i++
+		}
+	}
+	// Match tmux's precedence: -S, then -L, then TMUX, then the default
+	// socket under TMUX_TMPDIR (falling back to /tmp if it cannot resolve).
+	if socket == "" && label == "" {
+		socket, _, _ = strings.Cut(os.Getenv("TMUX"), ",")
+	}
+	if socket == "" {
+		base := "/tmp"
+		if tmp := os.Getenv("TMUX_TMPDIR"); tmp != "" {
+			if resolved, err := filepath.EvalSymlinks(tmp); err == nil {
+				base = resolved
+			}
+		}
+		if label == "" {
+			label = "default"
+		}
+		socket = filepath.Join(base, fmt.Sprintf("tmux-%d", os.Getuid()), label)
+	}
+	abs, err := filepath.Abs(socket)
+	if err != nil {
+		return "", err
+	}
+	// The socket and its private parent may not exist until the first launch.
+	// Resolve the existing ancestor so aliases have one identity in both cases.
+	path, suffix := abs, ""
+	for {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err == nil {
+			return filepath.Join(resolved, suffix), nil
+		}
+		if !os.IsNotExist(err) || path == filepath.Dir(path) {
+			return "", err
+		}
+		suffix = filepath.Join(filepath.Base(path), suffix)
+		path = filepath.Dir(path)
+	}
+}
+
 func (t Tmux) ensure(ctx context.Context, c Config, profile, project, self string) (Session, error) {
 	if err := t.checkVersion(ctx); err != nil {
 		return Session{}, err
 	}
-	key := sha256.Sum256([]byte(strings.Join(t.Prefix, "\x00") + "\x00" + profile + "\x00" + project))
+	socket, err := t.socketIdentity()
+	if err != nil {
+		return Session{}, fmt.Errorf("identify tmux server: %w", err)
+	}
+	key := sha256.Sum256([]byte(socket + "\x00" + profile + "\x00" + project))
 	lockdir := filepath.Join(xdgPath("XDG_CACHE_HOME", ".cache"), "tmux-agent-launcher", "locks")
 	if err := os.MkdirAll(lockdir, 0700); err != nil {
 		return Session{}, err
