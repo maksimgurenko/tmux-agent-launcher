@@ -236,11 +236,11 @@ func chooseSession(ctx context.Context, c Config, t Tmux, filter, self string) (
 		if !p.enabled() {
 			continue
 		}
-		cwd, _ := os.Getwd()
-		_, err := resolveExecutable(p.Command[0], agentEnv(os.Environ(), p.Env), cwd)
-		projectRelative := strings.ContainsRune(p.Command[0], '/') && !filepath.IsAbs(p.Command[0])
-		if err != nil && !projectRelative {
-			continue
+		env := agentEnv(os.Environ(), p.Env)
+		if !projectDependentExecutable(p.Command[0], env) {
+			if _, err := resolveExecutable(p.Command[0], env, ""); err != nil {
+				continue
+			}
 		}
 		entries = append(entries, entry{label: "New [" + id + "] " + p.Label, profile: id})
 	}
@@ -316,13 +316,18 @@ func doctor(ctx context.Context, c Config, t Tmux) error {
 	}
 	check("terminal "+c.Terminal, err)
 	available := 0
-	cwd, _ := os.Getwd()
 	for _, id := range sortedProfiles(c) {
 		p := c.Profiles[id]
 		if !p.enabled() {
 			continue
 		}
-		_, err := resolveExecutable(p.Command[0], agentEnv(os.Environ(), p.Env), cwd)
+		env := agentEnv(os.Environ(), p.Env)
+		if projectDependentExecutable(p.Command[0], env) {
+			available++
+			fmt.Printf("INFO profile %s: executable checked after project selection\n", id)
+			continue
+		}
+		_, err := resolveExecutable(p.Command[0], env, "")
 		if err != nil {
 			fmt.Printf("INFO profile %s: executable unavailable\n", id)
 		} else {

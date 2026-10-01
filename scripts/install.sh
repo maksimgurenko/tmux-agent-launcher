@@ -120,13 +120,13 @@ else
         tar -xzf "$archive" -C "$tmp" --strip-components=1 --no-same-owner --no-same-permissions -- "$member"
     done
     mv -- "$tmp/tmux-agent-launcher" "$tmp/binary"
-    if $owned && [[ $(hash "$tmp/binary") != "$(cat -- "$data/.binary.sha256")" ]] && ! $update; then die 'Choose --update to replace the installed version'; fi
 fi
 same=true
 if $owned; then
     for i in 0 1 2; do [[ $(hash "$tmp/${keys[$i]}") == "$(hash "${files[$i]}")" ]] || same=false; done
 else same=false; fi
 if $same; then printf 'Already installed at %s\n' "$bin"; exit; fi
+if $owned && [[ $action != rollback ]] && ! $update; then die 'Choose --update to replace the installed version or notices'; fi
 # Validate all destinations before changing any, and retain the preceding set.
 if $owned; then
     for i in 0 1 2; do
@@ -143,5 +143,9 @@ for i in 0 1 2; do
     hash "$target" > "$data/.${keys[$i]}.sha256"
 done
 printf '%s\n' "$bin" > "$state"
-chmod 0600 "$state" "$data/".*.sha256
+chmod 0600 "$state"
+for key in "${keys[@]}"; do
+    chmod 0600 "$data/.$key.sha256"
+    if $owned; then chmod 0600 "$data/.$key.previous.sha256"; fi
+done
 printf 'Installed at %s. Add %s/bin to PATH; run tmux-agent-launcher doctor.\n' "$bin" "$prefix"

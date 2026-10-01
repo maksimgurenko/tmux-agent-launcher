@@ -14,9 +14,15 @@ import (
 func discover(ctx context.Context, cfg Search, warn func(string)) ([]string, error) {
 	seen := map[string]bool{}
 	for _, root := range cfg.Roots {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		root, err := canonicalDir(root)
 		if err != nil {
 			warn(fmt.Sprintf("skip root: %v", err))
+			continue
+		}
+		if contains(strings.Split(root, string(filepath.Separator)), ".git") {
 			continue
 		}
 		err = filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
@@ -36,7 +42,7 @@ func discover(ctx context.Context, cfg Search, warn func(string)) ([]string, err
 			if hasControl(path) {
 				return filepath.SkipDir
 			}
-			if d.Name() == ".git" && path != root {
+			if d.Name() == ".git" {
 				return filepath.SkipDir
 			}
 			if path != root {

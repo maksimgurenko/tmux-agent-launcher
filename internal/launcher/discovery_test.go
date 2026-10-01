@@ -74,3 +74,28 @@ func TestDiscoveryGitRootsAndAllDirectories(t *testing.T) {
 		t.Fatal("cancellation ignored")
 	}
 }
+
+func TestDiscoveryPrunesExplicitGitMetadataRoots(t *testing.T) {
+	root := t.TempDir()
+	metadata := filepath.Join(root, "project", ".git")
+	objects := filepath.Join(metadata, "objects")
+	if err := os.MkdirAll(filepath.Join(objects, "pack"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(root, "metadata-alias")
+	if err := os.Symlink(metadata, alias); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"all", "git"} {
+		cfg := Search{Mode: mode, Roots: []string{metadata, objects, alias}}
+		got, err := discover(context.Background(), cfg, func(string) {})
+		if err != nil || len(got) != 0 {
+			t.Fatalf("%s metadata roots exposed projects: %q %v", mode, got, err)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := discover(ctx, Search{Mode: "all", Roots: []string{metadata}}, func(string) {}); err != context.Canceled {
+		t.Fatalf("pruned-root cancellation ignored: %v", err)
+	}
+}
