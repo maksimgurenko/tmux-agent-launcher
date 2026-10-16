@@ -26,6 +26,8 @@ presentation = "float"
 
 Install the selected programs independently. Menu styling uses the provider's own configuration. Additional menu providers require an adapter; arbitrary menu command templates are not supported. fzf needs a TTY; a desktop launch opens one terminal for selection and attachment.
 
+Session and project searches are case insensitive, including queries containing uppercase letters: `new`, `New` and `NEW` all match `New`. Result ordering uses the provider's existing settings and scoring; matching capitalization does not receive a separate ranking bonus.
+
 ## Agent profiles
 
 The presets are Codex (`codex --yolo`), Claude (`claude --dangerously-skip-permissions`), Pi (`pi --approve`) and OpenCode (`opencode --auto`). These select each CLI's supported unattended policy; their semantics differ. [Upstream references](upstream.md).

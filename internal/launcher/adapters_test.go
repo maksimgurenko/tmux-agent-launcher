@@ -4,10 +4,68 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
+	"time"
 )
+
+func TestPickerCaseInsensitiveMatching(t *testing.T) {
+	labels := []string{"New [test] Example", "new [test] example", "NEW [test] EXAMPLE", "Attach [test] Elsewhere"}
+	for _, backend := range []string{"rofi", "fzf"} {
+		t.Run(backend, func(t *testing.T) {
+			if _, err := exec.LookPath(backend); err != nil {
+				t.Skip(backend + " unavailable")
+			}
+			// Launcher arguments must override user defaults without losing records.
+			args := pickerCommand(backend, "Test")
+			if backend == "rofi" {
+				if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+					t.Skip("rofi needs a graphical connection, even for -dump")
+				}
+				config := filepath.Join(t.TempDir(), "test.rasi")
+				if err := os.WriteFile(config, []byte("configuration { case-sensitive: true; case-smart: true; }\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				args = append([]string{args[0], "-config", config}, args[1:]...)
+			} else {
+				t.Setenv("FZF_DEFAULT_OPTS", "--no-ignore-case")
+				t.Setenv("FZF_DEFAULT_OPTS_FILE", "")
+			}
+			for _, query := range []string{"new", "New", "NEW"} {
+				t.Run(query, func(t *testing.T) {
+					filtered := append([]string(nil), args...)
+					if backend == "rofi" {
+						filtered = append(filtered, "-dump", "-filter", query)
+					} else {
+						filtered = append(filtered, "--filter="+query)
+					}
+					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+					defer cancel()
+					cmd := exec.CommandContext(ctx, filtered[0], filtered[1:]...)
+					cmd.Stdin = strings.NewReader(pickerInput(backend, labels))
+					out, err := cmd.Output()
+					if err != nil {
+						t.Fatal(err)
+					}
+					seen := make(map[int]bool)
+					for _, record := range strings.Split(strings.TrimSuffix(string(out), "\n"), "\n") {
+						i, err := parseSelection(backend, record, labels)
+						if err != nil {
+							t.Fatal(err)
+						}
+						seen[i] = true
+					}
+					if !reflect.DeepEqual(seen, map[int]bool{0: true, 1: true, 2: true}) {
+						t.Fatalf("query %q matched %v; want all three case variants", query, seen)
+					}
+				})
+			}
+		})
+	}
+}
 
 func TestPickerIdentityAndFailures(t *testing.T) {
 	labels := []string{"same label", "same label", "/a/path with spaces:#"}

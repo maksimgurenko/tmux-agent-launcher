@@ -16,13 +16,14 @@ var errCancelled = errors.New("cancelled")
 func pickerCommand(backend, prompt string) []string {
 	switch backend {
 	case "rofi":
-		return []string{"rofi", "-dmenu", "-format", "i", "-no-custom", "-p", prompt}
+		return []string{"rofi", "-dmenu", "-i", "-no-case-smart", "-format", "i", "-no-custom", "-p", prompt}
 	case "fuzzel":
+		// Fuzzel always matches case insensitively.
 		return []string{"fuzzel", "--dmenu", "--index", "--prompt", prompt + ": "}
 	case "wofi":
-		return []string{"wofi", "--dmenu", "--no-custom-entry", "--prompt", prompt}
+		return []string{"wofi", "--dmenu", "--insensitive", "--no-custom-entry", "--prompt", prompt}
 	case "fzf":
-		return []string{"fzf", "--delimiter=\t", "--with-nth=2..", "--no-multi", "--prompt", prompt + ": "}
+		return []string{"fzf", "--ignore-case", "--delimiter=\t", "--with-nth=2..", "--no-multi", "--prompt", prompt + ": "}
 	}
 	return nil
 }
