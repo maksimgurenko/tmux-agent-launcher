@@ -68,6 +68,7 @@ func TestProjectCacheSettingsAndRelativeRootsChangeIdentity(t *testing.T) {
 	for _, change := range []func(*Search){
 		func(c *Search) { c.MaxDepth = 7 },
 		func(c *Search) { c.Mode = "all" },
+		func(c *Search) { c.ExcludeHidden = true },
 		func(c *Search) { c.Exclude = append([]string{"another"}, c.Exclude...) },
 		func(c *Search) { c.Roots = []string{filepath.Join(c.Roots[0], "another")} },
 	} {

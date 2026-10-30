@@ -22,11 +22,12 @@ type Profile struct {
 func (p Profile) enabled() bool { return p.Enabled == nil || *p.Enabled }
 
 type Search struct {
-	Roots    []string `toml:"roots"`
-	Mode     string   `toml:"mode"`
-	Exclude  []string `toml:"exclude"`
-	MaxDepth int      `toml:"max_depth"`
-	Cache    bool     `toml:"cache"`
+	Roots         []string `toml:"roots"`
+	Mode          string   `toml:"mode"`
+	Exclude       []string `toml:"exclude"`
+	ExcludeHidden bool     `toml:"exclude_hidden"`
+	MaxDepth      int      `toml:"max_depth"`
+	Cache         bool     `toml:"cache"`
 }
 type Terminal struct {
 	Command []string `toml:"command"`
@@ -95,6 +96,9 @@ func loadConfig(path string, explicit bool) (Config, error) {
 	}
 	if m.IsDefined("search", "exclude") {
 		c.Search.Exclude = raw.Search.Exclude
+	}
+	if m.IsDefined("search", "exclude_hidden") {
+		c.Search.ExcludeHidden = raw.Search.ExcludeHidden
 	}
 	if m.IsDefined("search", "max_depth") {
 		c.Search.MaxDepth = raw.Search.MaxDepth

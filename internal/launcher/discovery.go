@@ -47,6 +47,9 @@ func discover(ctx context.Context, cfg Search, warn func(string)) ([]string, err
 			}
 			depth := 0
 			if path != root {
+				if cfg.ExcludeHidden && strings.HasPrefix(d.Name(), ".") {
+					return filepath.SkipDir
+				}
 				rel, _ := filepath.Rel(root, path)
 				depth = strings.Count(rel, string(filepath.Separator)) + 1
 				for _, pattern := range cfg.Exclude {

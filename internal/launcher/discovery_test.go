@@ -75,6 +75,49 @@ func TestDiscoveryGitRootsAndAllDirectories(t *testing.T) {
 	}
 }
 
+func TestDiscoveryExcludeHidden(t *testing.T) {
+	root := t.TempDir()
+	visible := []string{filepath.Join(root, "project"), filepath.Join(root, "project.name")}
+	hiddenRoot := filepath.Join(root, ".hidden")
+	hiddenChild := filepath.Join(hiddenRoot, "child")
+	collection := filepath.Join(root, ".collection")
+	hidden := []string{hiddenRoot, hiddenChild, filepath.Join(hiddenRoot, ".nested"), filepath.Join(collection, "project"), filepath.Join(visible[0], ".nested")}
+	for _, path := range append(visible, hidden...) {
+		gitForTest(t, "init", "-q", path)
+	}
+	for _, mode := range []string{"git", "all"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := defaults().Search
+			cfg.Roots = []string{root}
+			cfg.Mode = mode
+			for _, excludeHidden := range []bool{false, true} {
+				cfg.ExcludeHidden = excludeHidden
+				got, err := discover(context.Background(), cfg, func(string) {})
+				want := append([]string{}, visible...)
+				if !excludeHidden {
+					want = append(want, hidden...)
+					if mode == "all" {
+						want = append(want, collection)
+					}
+				}
+				if mode == "all" {
+					want = append(want, root)
+				}
+				sort.Strings(want)
+				if err != nil || !reflect.DeepEqual(got, want) {
+					t.Fatalf("exclude_hidden=%t: %q %v; want %q", excludeHidden, got, err, want)
+				}
+			}
+			// Explicit roots opt into a hidden tree; hidden descendants are still pruned.
+			cfg.Roots = []string{hiddenRoot}
+			got, err := discover(context.Background(), cfg, func(string) {})
+			if err != nil || !reflect.DeepEqual(got, []string{hiddenRoot, hiddenChild}) {
+				t.Fatalf("explicit hidden root: %q %v", got, err)
+			}
+		})
+	}
+}
+
 func TestDiscoveryPrunesExplicitGitMetadataRoots(t *testing.T) {
 	root := t.TempDir()
 	metadata := filepath.Join(root, "project", ".git")
