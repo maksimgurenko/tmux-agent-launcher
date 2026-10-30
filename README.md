@@ -71,6 +71,7 @@ presentation = "float"
 [search]
 roots = ["~/projects"]
 mode = "git"
+max_depth = 7
 
 [profiles.codex-work]
 label = "Codex (work)"
@@ -78,6 +79,8 @@ command = ["codex", "--yolo"]
 ```
 
 See the [configuration guide](docs/configuration.md) for all fields, profile overrides, exclusions, custom terminals including Ghostty, menu providers and CLI examples. Arrays contain separate arguments and replace defaults; no implicit shell evaluation is added. Existing live sessions keep their running agent after profile edits.
+
+Project searches reuse a persistent cache. Lists older than five minutes refresh in the background when used; run `tmux-agent-launcher refresh` to include new projects immediately. The first uncached search still scans. `max_depth = 7` bounds that work to seven levels below each root; omitted or `0` means unlimited. Use matching configuration/CLI overrides for refresh and launch.
 
 ## Desktop integration
 

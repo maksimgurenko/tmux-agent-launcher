@@ -31,6 +31,8 @@ type options struct {
 	config, profile, directory, picker, terminal, presentation, discovery, tmuxSocket string
 	roots                                                                             rootsFlag
 	showVersion                                                                       bool
+	maxDepth                                                                          int
+	maxDepthSet                                                                       bool
 }
 
 func parseOptions(args []string) (options, error) {
@@ -45,9 +47,18 @@ func parseOptions(args []string) (options, error) {
 	f.StringVar(&o.presentation, "presentation", "", "float or tile")
 	f.StringVar(&o.discovery, "discovery", "", "git or all")
 	f.Var(&o.roots, "root", "search root; repeat to replace configured roots")
+	f.IntVar(&o.maxDepth, "max-depth", 0, "maximum discovery depth below each root (0 means unlimited)")
 	f.BoolVar(&o.showVersion, "version", false, "show build identity")
 	if err := f.Parse(args); err != nil {
 		return o, err
+	}
+	f.Visit(func(f *flag.Flag) {
+		if f.Name == "max-depth" {
+			o.maxDepthSet = true
+		}
+	})
+	if o.maxDepth < 0 {
+		return o, fmt.Errorf("--max-depth must be nonnegative")
 	}
 	if f.NArg() != 0 {
 		return o, fmt.Errorf("unexpected positional argument %q", f.Arg(0))
@@ -76,6 +87,9 @@ func applyOptions(c *Config, o options) {
 	if len(o.roots) > 0 {
 		c.Search.Roots = o.roots
 	}
+	if o.maxDepthSet {
+		c.Search.MaxDepth = o.maxDepth
+	}
 }
 
 // Main runs the launcher command.
@@ -92,6 +106,11 @@ func run(ctx context.Context, args []string) error {
 	sub := ""
 	if len(args) > 0 {
 		switch args[0] {
+		case "__refresh-projects":
+			if len(args) != 1 {
+				return fmt.Errorf("invalid project refresh invocation")
+			}
+			return runProjectRefresh(ctx)
 		case "__run-agent":
 			if len(args) != 2 {
 				return fmt.Errorf("invalid runner invocation")
@@ -102,6 +121,9 @@ func run(ctx context.Context, args []string) error {
 			args = args[1:]
 		case "doctor":
 			sub = "doctor"
+			args = args[1:]
+		case "refresh":
+			sub = "refresh"
 			args = args[1:]
 		case "config":
 			if len(args) < 2 || args[1] != "init" {
@@ -132,6 +154,13 @@ func run(ctx context.Context, args []string) error {
 	}
 	applyOptions(&c, o)
 	if err := c.validate(); err != nil {
+		return err
+	}
+	if sub == "refresh" {
+		dirs, err := refreshProjects(ctx, c.Search, true, func(s string) { fmt.Fprintln(os.Stderr, s) })
+		if err == nil {
+			fmt.Printf("Indexed %d project directories\n", len(dirs))
+		}
 		return err
 	}
 	t := Tmux{}
@@ -170,6 +199,9 @@ func run(ctx context.Context, args []string) error {
 			if pair[1] != "" {
 				child = append(child, pair[0], pair[1])
 			}
+		}
+		if o.maxDepthSet {
+			child = append(child, "--max-depth", fmt.Sprint(o.maxDepth))
 		}
 		if o.tmuxSocket != "" {
 			child = append(child, "--tmux-socket", t.Prefix[1])
@@ -264,12 +296,15 @@ func chooseSession(ctx context.Context, c Config, t Tmux, filter, self string) (
 			return Session{}, fmt.Errorf("Git discovery requires git")
 		}
 	}
-	dirs, err := discover(ctx, c.Search, func(s string) { fmt.Fprintln(os.Stderr, s) })
+	dirs, err := cachedProjects(ctx, c.Search, self, func(s string) { fmt.Fprintln(os.Stderr, s) })
 	if err != nil {
 		return Session{}, err
 	}
 	i, err = pick(ctx, c.Picker, "Project", dirs)
 	if err != nil {
+		return Session{}, err
+	}
+	if err := validateProject(ctx, c.Search, dirs[i]); err != nil {
 		return Session{}, err
 	}
 	return t.ensure(ctx, c, selectedProfile, dirs[i], self)

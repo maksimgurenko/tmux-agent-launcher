@@ -99,3 +99,41 @@ func TestDiscoveryPrunesExplicitGitMetadataRoots(t *testing.T) {
 		t.Fatalf("pruned-root cancellation ignored: %v", err)
 	}
 }
+
+func TestDiscoveryMaxDepthIncludesBoundaryAndExplicitDeeperRoots(t *testing.T) {
+	root := t.TempDir()
+	child := filepath.Join(root, "child")
+	boundary := filepath.Join(child, "ordinary", "boundary")
+	deeper := filepath.Join(boundary, "deeper")
+	for _, path := range []string{root, child, boundary, deeper} {
+		gitForTest(t, "init", "-q", path)
+	}
+	for _, mode := range []string{"git", "all"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := defaults().Search
+			cfg.Roots = []string{root}
+			cfg.Mode = mode
+			cfg.MaxDepth = 3
+			got, err := discover(context.Background(), cfg, func(string) {})
+			want := []string{root, child, boundary}
+			if mode == "all" {
+				want = append(want, filepath.Dir(boundary))
+			}
+			sort.Strings(want)
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Fatalf("depth boundary: %q %v; want %q", got, err, want)
+			}
+			cfg.Roots = append(cfg.Roots, deeper)
+			got, err = discover(context.Background(), cfg, func(string) {})
+			if err != nil || !contains(got, deeper) {
+				t.Fatalf("explicit deeper root missing: %q %v", got, err)
+			}
+			cfg.Roots = []string{root}
+			cfg.MaxDepth = 0
+			got, err = discover(context.Background(), cfg, func(string) {})
+			if err != nil || !contains(got, deeper) {
+				t.Fatalf("unlimited depth lost nested repository: %q %v", got, err)
+			}
+		})
+	}
+}

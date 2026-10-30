@@ -59,12 +59,31 @@ Each new agent receives the launcher's current environment snapshot plus its pro
 [search]
 roots = ["~/projects", "~/src"]
 mode = "git"
+max_depth = 7
+cache = true
 exclude = [".git", ".cache", "node_modules", ".venv", "target"]
 ```
 
 `mode = "git"` discovers Git working trees; `mode = "all"` makes ordinary directories eligible. Roots default to `["~"]`. `~` and `~/...` expand; other relative paths use the invocation's working directory. Arrays replace their defaults rather than concatenate.
 
+`max_depth` limits traversal below each search root. The root is depth 0; `max_depth = 7` includes directories at depth 7 and does not read their children. The default, `0`, preserves unlimited depth. Add a deeper collection as another search root to search it independently. `--max-depth N` overrides the configured value; negative values are rejected.
+
 Exclusions are globs matched against directory basenames, or paths relative to a root when the pattern contains `/`. Discovery recognizes nested repositories, submodules and worktrees. It ignores `.gitignore`, excludes bare repository storage in Git mode and never traverses `.git` metadata. Linked worktrees outside the roots are not added automatically. Canonical directories are deduplicated; directory symlinks are not recursively followed. Missing roots are diagnosed while other roots continue. Paths containing control characters are unsupported.
+
+Project caching is enabled by default. The first search scans and saves its results. Later searches open the picker from that saved list without walking the roots. When the list is at least five minutes old, using it starts a detached refresh; the current picker keeps its original list and the next invocation sees the refreshed results. There is no persistent daemon or timer. Set `cache = false` to scan on every search.
+
+To make a newly created project visible immediately, or prepare the cache before opening a picker, run:
+
+```sh
+tmux-agent-launcher refresh
+tmux-agent-launcher refresh --max-depth 7
+```
+
+Refresh uses the same configuration and search overrides as a normal launch, without requiring tmux, a picker or a terminal. Changing roots, discovery mode, exclusions or depth selects a separate cache; relative roots are resolved using the invocation's directory. Use identical overrides for refresh and launch. A missing or corrupt cache is rebuilt; unavailable cache storage falls back to an uncached scan. The first scan after a settings change can still take time.
+
+Cached paths are rechecked after selection. Deleted paths, paths redirected to another canonical directory, and Git projects that lost their metadata are rejected with a refresh hint. Existing live-session selection continues to skip discovery. Cancellation starts no agent; an already started background refresh can finish independently.
+
+Private JSON lists and refresh locks live under `$XDG_CACHE_HOME/tmux-agent-launcher/projects` (default `~/.cache/tmux-agent-launcher/projects`). Refreshes serialize per search configuration and replace lists atomically, so readers can use the previous complete list during a refresh. These regenerable files can be removed when the launcher is not in use.
 
 ## Custom terminals and Ghostty
 
@@ -92,6 +111,8 @@ tmux-agent-launcher --terminal foot --picker fuzzel
 tmux-agent-launcher --profile codex-work
 tmux-agent-launcher --profile codex --directory ~/projects/example
 tmux-agent-launcher --root ~/projects --root ~/src --discovery all
+tmux-agent-launcher --max-depth 7
+tmux-agent-launcher refresh --root ~/projects --max-depth 7
 ```
 
 `--directory` requires `--profile` and bypasses discovery. Repeated `--root` flags replace configured roots. `--tmux-socket FILE` selects another server and preserves it across terminal attachment. `--help` lists all options. Unknown TOML keys, unsupported choices and invalid commands are errors. `doctor` checks configuration and dependencies without starting agents; optional missing agent executables are informational.

@@ -14,6 +14,8 @@ func TestConfigMergeAndValidation(t *testing.T) {
 [search]
 roots=["/projects"]
 exclude=[]
+max_depth=7
+cache=false
 [profiles.codex]
 label="Custom Codex"
 env={EXAMPLE="new"}
@@ -40,11 +42,18 @@ enabled=false
 	if c.Profiles["experimental"].enabled() {
 		t.Fatal("disabled profile enabled")
 	}
+	if c.Search.MaxDepth != 7 || c.Search.Cache {
+		t.Fatal("search depth/cache overrides were not applied")
+	}
+	if defaults().Search.MaxDepth != 0 || !defaults().Search.Cache {
+		t.Fatal("unexpected search defaults")
+	}
 	for _, bad := range []string{`typo=true`, `[profiles.bad]
 command=[]`, `[profiles."bad/name"]
 command=["agent"]`, `[terminals.custom]
 command=["term","prefix{command}"]
-terminal="custom"`} {
+terminal="custom"`, `[search]
+max_depth=-1`} {
 		os.WriteFile(path, []byte(bad), 0600)
 		c, err := loadConfig(path, true)
 		if err == nil {

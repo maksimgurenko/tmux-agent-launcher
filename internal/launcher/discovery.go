@@ -45,8 +45,10 @@ func discover(ctx context.Context, cfg Search, warn func(string)) ([]string, err
 			if d.Name() == ".git" {
 				return filepath.SkipDir
 			}
+			depth := 0
 			if path != root {
 				rel, _ := filepath.Rel(root, path)
+				depth = strings.Count(rel, string(filepath.Separator)) + 1
 				for _, pattern := range cfg.Exclude {
 					name := d.Name()
 					if strings.ContainsRune(pattern, '/') {
@@ -59,23 +61,13 @@ func discover(ctx context.Context, cfg Search, warn func(string)) ([]string, err
 			}
 			eligible := cfg.Mode == "all"
 			if !eligible {
-				if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
-					cmd := exec.CommandContext(ctx, "git", "-C", path, "rev-parse", "--show-toplevel")
-					for _, entry := range os.Environ() {
-						key, _, _ := strings.Cut(entry, "=")
-						if !contains([]string{"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"}, key) {
-							cmd.Env = append(cmd.Env, entry)
-						}
-					}
-					out, err := cmd.Output()
-					if err == nil {
-						top, err := canonicalDir(strings.TrimSuffix(string(out), "\n"))
-						eligible = err == nil && top == path
-					}
-				}
+				eligible = isGitProject(ctx, path)
 			}
 			if eligible {
 				seen[path] = true
+			}
+			if cfg.MaxDepth > 0 && depth >= cfg.MaxDepth {
+				return filepath.SkipDir
 			}
 			return nil
 		})
@@ -83,10 +75,52 @@ func discover(ctx context.Context, cfg Search, warn func(string)) ([]string, err
 			return nil, err
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	a := make([]string, 0, len(seen))
 	for p := range seen {
 		a = append(a, p)
 	}
 	sort.Strings(a)
 	return a, nil
+}
+
+func isGitProject(ctx context.Context, path string) bool {
+	if _, err := os.Stat(filepath.Join(path, ".git")); err != nil {
+		return false
+	}
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "rev-parse", "--show-toplevel")
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if !contains([]string{"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"}, key) {
+			cmd.Env = append(cmd.Env, entry)
+		}
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	top, err := canonicalDir(strings.TrimSuffix(string(out), "\n"))
+	return err == nil && top == path
+}
+
+func validateProject(ctx context.Context, cfg Search, path string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	canonical, err := canonicalDir(path)
+	if err != nil {
+		return fmt.Errorf("project unavailable; run refresh: %w", err)
+	}
+	if canonical != path {
+		return fmt.Errorf("project directory changed since discovery; run refresh")
+	}
+	if cfg.Mode == "git" && !isGitProject(ctx, path) {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return fmt.Errorf("project is no longer a Git working tree; run refresh")
+	}
+	return ctx.Err()
 }

@@ -2,7 +2,7 @@
 set -euo pipefail
 cd -- "$(dirname -- "$0")/.."
 export LC_ALL=C
-files=(cmd/tmux-agent-launcher/main.go internal/launcher/config.go internal/launcher/discovery.go internal/launcher/cli.go internal/launcher/picker.go internal/launcher/runner.go internal/launcher/terminal.go internal/launcher/tmux.go go.mod go.sum internal/launcher/default-config.toml)
+files=(cmd/tmux-agent-launcher/main.go internal/launcher/config.go internal/launcher/discovery.go internal/launcher/project_cache.go internal/launcher/cli.go internal/launcher/picker.go internal/launcher/runner.go internal/launcher/terminal.go internal/launcher/tmux.go go.mod go.sum internal/launcher/default-config.toml)
 digest=$(sha256sum -- "${files[@]}" | sha256sum | cut -d ' ' -f1)
 if [[ ${1:-} == --digest ]]; then printf '%s\n' "$digest"; exit; fi
 version=${VERSION:-development}

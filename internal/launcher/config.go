@@ -22,9 +22,11 @@ type Profile struct {
 func (p Profile) enabled() bool { return p.Enabled == nil || *p.Enabled }
 
 type Search struct {
-	Roots   []string `toml:"roots"`
-	Mode    string   `toml:"mode"`
-	Exclude []string `toml:"exclude"`
+	Roots    []string `toml:"roots"`
+	Mode     string   `toml:"mode"`
+	Exclude  []string `toml:"exclude"`
+	MaxDepth int      `toml:"max_depth"`
+	Cache    bool     `toml:"cache"`
 }
 type Terminal struct {
 	Command []string `toml:"command"`
@@ -40,7 +42,7 @@ type Config struct {
 
 func defaults() Config {
 	return Config{Picker: "rofi", Terminal: "kitty", Presentation: "float",
-		Search: Search{Roots: []string{"~"}, Mode: "git", Exclude: []string{".git", ".cache", "node_modules", ".venv", "target"}},
+		Search: Search{Roots: []string{"~"}, Mode: "git", Exclude: []string{".git", ".cache", "node_modules", ".venv", "target"}, Cache: true},
 		Profiles: map[string]Profile{
 			"codex":    {Label: "Codex", Command: []string{"codex", "--yolo"}},
 			"claude":   {Label: "Claude", Command: []string{"claude", "--dangerously-skip-permissions"}},
@@ -94,6 +96,12 @@ func loadConfig(path string, explicit bool) (Config, error) {
 	if m.IsDefined("search", "exclude") {
 		c.Search.Exclude = raw.Search.Exclude
 	}
+	if m.IsDefined("search", "max_depth") {
+		c.Search.MaxDepth = raw.Search.MaxDepth
+	}
+	if m.IsDefined("search", "cache") {
+		c.Search.Cache = raw.Search.Cache
+	}
 	for id, p := range raw.Profiles {
 		v := c.Profiles[id]
 		if m.IsDefined("profiles", id, "label") {
@@ -145,6 +153,9 @@ func (c Config) validate() error {
 	}
 	if c.Search.Mode != "git" && c.Search.Mode != "all" {
 		return fmt.Errorf("search.mode must be git or all")
+	}
+	if c.Search.MaxDepth < 0 {
+		return fmt.Errorf("search.max_depth must be nonnegative (0 means unlimited)")
 	}
 	for _, pattern := range c.Search.Exclude {
 		if _, err := filepath.Match(pattern, "x"); err != nil {

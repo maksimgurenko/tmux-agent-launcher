@@ -19,7 +19,7 @@ The implementation stays in one internal Go package because these components ser
 
 1. Merge built-in defaults, the selected TOML file and explicit CLI options; reject unknown keys and invalid values.
 2. Offer managed live sessions and new-session actions for enabled profiles with available executables; defer project-dependent executable checks until a project is selected. Selecting a live session skips discovery and does not require its original profile or executable.
-3. Discover eligible directories beneath search roots, or accept `--directory` with an explicit profile. Canonicalize directory aliases before computing session identity.
+3. Load cached project directories or discover them beneath search roots, or accept `--directory` with an explicit profile. Revalidate a selected project before creating a session. Canonicalize directory aliases before computing session identity.
 4. Lock that profile/directory identity on the canonical tmux socket path and check again for an existing session. Concurrent launches through equivalent server connections reuse one session.
 5. For a new session, start the same executable as a short-lived runner. It reads a restricted launch snapshot, removes the snapshot, changes directory and replaces itself with the native agent process.
 6. Attach by stable tmux session ID, retaining the selected tmux socket. A new terminal receives the attachment command as arguments.
@@ -35,6 +35,8 @@ Session-local ownership metadata identifies launcher sessions even after profile
 ## Discovery and adapters
 
 Git discovery recognizes working trees, nested repositories, submodules and linked worktrees beneath configured roots. The `all` mode permits ordinary directories. Launcher exclusions apply independently of Git ignore files. Explicit symlink roots are resolved, directory aliases are deduplicated, and directory symlinks are not recursively followed. Git metadata is never traversed.
+
+An optional depth limit includes its boundary directories and prunes their children; each explicit root starts at depth 0. Unlimited depth remains the default. Project lists are cached by search settings and expanded absolute roots. A cache hit does not touch search roots. Lists older than five minutes trigger a detached, bounded refresh through the same executable; each picker uses a fixed snapshot. Cold searches populate the cache synchronously, and `refresh` explicitly rebuilds it without opening a UI. Per-cache locks prevent duplicate scans during concurrent cold launches; atomic replacement preserves complete snapshots for readers. Cache failures fall back to discovery. Selected cached paths must still be canonical, accessible directories and eligible for the selected discovery mode.
 
 Rofi, Fuzzel, Wofi and fzf adapters validate selection identity instead of resolving ambiguous labels. Cancellation returns without launching anything. For desktop fzf launches, one terminal hosts both selection and attachment; cancellation closes that window.
 

@@ -5,6 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -35,5 +37,78 @@ func TestConfigInitEmbedsExampleAndPreservesExistingFile(t *testing.T) {
 	got, err = os.ReadFile(path)
 	if err != nil || !bytes.Equal(got, personal) {
 		t.Fatal("existing configuration was changed", err)
+	}
+}
+
+func TestRefreshDepthOverrideWithoutUIDependencies(t *testing.T) {
+	root := t.TempDir()
+	deep := root
+	for i := 0; i < 8; i++ {
+		deep = filepath.Join(deep, "nested")
+	}
+	if err := os.MkdirAll(deep, 0700); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(t.TempDir(), "config.toml")
+	text := "[search]\nroots = [" + fmtTOMLString(root) + "]\nmode = \"all\"\nmax_depth = 2\n"
+	if err := os.WriteFile(config, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	t.Setenv("PATH", t.TempDir()) // No tmux, Git, picker or terminal available.
+	cmd := exec.Command(testLauncher, "refresh", "--config", config, "--max-depth", "7")
+	if b, err := cmd.CombinedOutput(); err != nil || string(b) != "Indexed 8 project directories\n" {
+		t.Fatalf("refresh with explicit depth: %s %v", b, err)
+	}
+	c, err := loadConfig(config, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Search.MaxDepth = 7
+	_, path, err := projectCacheLocation(c.Search)
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := readProjectIndex(path)
+	if err != nil || len(index.Projects) != 8 || contains(index.Projects, deep) {
+		t.Fatalf("refresh did not cache the requested boundary: %v %v", index, err)
+	}
+	for _, value := range []string{"0", "7"} {
+		o, err := parseOptions([]string{"--max-depth", value})
+		if err != nil {
+			t.Fatal(err)
+		}
+		applyOptions(&c, o)
+		if (value == "0" && c.Search.MaxDepth != 0) || (value == "7" && c.Search.MaxDepth != 7) {
+			t.Fatal("explicit depth did not override configuration")
+		}
+	}
+	if _, err := parseOptions([]string{"--max-depth", "-1"}); err == nil {
+		t.Fatal("negative CLI depth accepted")
+	}
+}
+
+func TestFzfTerminalHandoffPreservesExplicitUnlimitedDepth(t *testing.T) {
+	tm := disposableTmux(t)
+	dir := t.TempDir()
+	proof := filepath.Join(dir, "arguments")
+	capture := filepath.Join(dir, "terminal")
+	if err := os.WriteFile(capture, []byte("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$DEPTH_TEST_ARGS\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DEPTH_TEST_ARGS", proof)
+	config := filepath.Join(dir, "config.toml")
+	text := "picker = \"fzf\"\nterminal = \"custom\"\n[search]\nroots = [" + fmtTOMLString(dir) + "]\nmax_depth = 7\n[terminals.custom]\ncommand = [" + fmtTOMLString(capture) + ", \"{command}\"]\n"
+	if err := os.WriteFile(config, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(testLauncher, "--config", config, "--max-depth", "0", "--tmux-socket", tm.Prefix[1])
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("fzf handoff: %s %v", b, err)
+	}
+	b, err := os.ReadFile(proof)
+	if err != nil || !strings.Contains(string(b), "--max-depth\n0\n") {
+		t.Fatalf("terminal handoff dropped explicit depth: %s %v", b, err)
 	}
 }
