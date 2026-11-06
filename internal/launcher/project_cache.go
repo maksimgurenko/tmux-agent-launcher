@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const projectCacheVersion = 1
+const projectCacheVersion = 2
 const projectRefreshInterval = 5 * time.Minute
 
 type projectIndex struct {

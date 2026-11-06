@@ -21,11 +21,11 @@ The directory selected as the starting location for a coding agent's work.
 _Avoid_: Session
 
 **Search root**:
-A configured directory beneath which the launcher discovers eligible project directories.
+A configured directory from which the launcher discovers eligible project directories, including the root itself.
 _Avoid_: Project directory
 
 **Discovery mode**:
-The rule determining which directories beneath search roots can be selected as projects: Git repositories or all directories.
+The rule determining which directories can be selected as projects: Git repositories plus search roots and empty directories, or all directories.
 _Avoid_: Agent profile
 
 **Live session**:

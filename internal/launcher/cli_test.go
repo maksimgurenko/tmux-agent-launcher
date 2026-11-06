@@ -2,13 +2,53 @@ package launcher
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 )
+
+func TestProjectPickerLaunchesRootsAndEmptyDirectories(t *testing.T) {
+	for _, target := range []string{"root", "empty"} {
+		t.Run(target, func(t *testing.T) {
+			tm := disposableTmux(t)
+			root := t.TempDir()
+			empty := filepath.Join(root, "empty")
+			if err := os.Mkdir(empty, 0700); err != nil {
+				t.Fatal(err)
+			}
+			project := root
+			if target == "empty" {
+				project = empty
+			}
+			bin := t.TempDir()
+			proof := filepath.Join(bin, "proof")
+			t.Setenv("PICKER_TEST_PROJECT", project)
+			t.Setenv("PICKER_TEST_PROOF", proof)
+			t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+			picker := "#!/bin/sh\ncase \"$*\" in *'Agent session'*) cat >/dev/null; echo 0;; *) i=0; while IFS= read -r row; do if [ \"$row\" = \"$PICKER_TEST_PROJECT\" ]; then echo \"$i\"; fi; i=$((i + 1)); done;; esac\n"
+			if err := os.WriteFile(filepath.Join(bin, "rofi"), []byte(picker), 0700); err != nil {
+				t.Fatal(err)
+			}
+			cfg := defaults()
+			cfg.Search.Roots = []string{root}
+			cfg.Profiles = map[string]Profile{"test": {Command: []string{"/bin/sh", "-c", "pwd > \"$PICKER_TEST_PROOF\"; exec /bin/sleep 60"}}}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			session, err := chooseSession(ctx, cfg, tm, "test", testLauncher)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.TrimSpace(waitProof(t, proof)); got != project || session.Project != project {
+				t.Fatalf("launched in %q with session project %q; want %q", got, session.Project, project)
+			}
+		})
+	}
+}
 
 func TestConfigInitEmbedsExampleAndPreservesExistingFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings", "config.toml")

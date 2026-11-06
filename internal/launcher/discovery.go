@@ -3,6 +3,7 @@ package launcher
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -62,7 +63,11 @@ func discover(ctx context.Context, cfg Search, warn func(string)) ([]string, err
 					}
 				}
 			}
-			eligible := cfg.Mode == "all"
+			// Empty directories inside bare repository storage are Git metadata.
+			if cfg.Mode == "git" && isBareGitRepository(ctx, path) {
+				return filepath.SkipDir
+			}
+			eligible := cfg.Mode == "all" || path == root || isEmptyDir(path)
 			if !eligible {
 				eligible = isGitProject(ctx, path)
 			}
@@ -93,7 +98,24 @@ func isGitProject(ctx context.Context, path string) bool {
 	if _, err := os.Stat(filepath.Join(path, ".git")); err != nil {
 		return false
 	}
-	cmd := exec.CommandContext(ctx, "git", "-C", path, "rev-parse", "--show-toplevel")
+	out, err := gitRevParse(ctx, path, "--show-toplevel")
+	if err != nil {
+		return false
+	}
+	top, err := canonicalDir(out)
+	return err == nil && top == path
+}
+
+func isBareGitRepository(ctx context.Context, path string) bool {
+	if _, err := os.Stat(filepath.Join(path, "HEAD")); err != nil {
+		return false
+	}
+	out, err := gitRevParse(ctx, path, "--is-bare-repository")
+	return err == nil && out == "true"
+}
+
+func gitRevParse(ctx context.Context, path, flag string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", path, "rev-parse", flag)
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
 		if !contains([]string{"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"}, key) {
@@ -101,11 +123,17 @@ func isGitProject(ctx context.Context, path string) bool {
 		}
 	}
 	out, err := cmd.Output()
+	return strings.TrimSuffix(string(out), "\n"), err
+}
+
+func isEmptyDir(path string) bool {
+	f, err := os.Open(path)
 	if err != nil {
 		return false
 	}
-	top, err := canonicalDir(strings.TrimSuffix(string(out), "\n"))
-	return err == nil && top == path
+	defer f.Close()
+	_, err = f.Readdirnames(1)
+	return err == io.EOF
 }
 
 func validateProject(ctx context.Context, cfg Search, path string) error {
@@ -119,11 +147,16 @@ func validateProject(ctx context.Context, cfg Search, path string) error {
 	if canonical != path {
 		return fmt.Errorf("project directory changed since discovery; run refresh")
 	}
-	if cfg.Mode == "git" && !isGitProject(ctx, path) {
+	if cfg.Mode == "git" && !isEmptyDir(path) && !isGitProject(ctx, path) {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		return fmt.Errorf("project is no longer a Git working tree; run refresh")
+		for _, root := range cfg.Roots {
+			if canonical, err := canonicalDir(root); err == nil && canonical == path {
+				return ctx.Err()
+			}
+		}
+		return fmt.Errorf("project is no longer a Git working tree, search root or empty directory; run refresh")
 	}
 	return ctx.Err()
 }

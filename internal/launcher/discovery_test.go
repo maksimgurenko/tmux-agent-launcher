@@ -18,6 +18,51 @@ func gitForTest(t *testing.T, args ...string) {
 		t.Fatalf("git %q: %s %v", args, b, err)
 	}
 }
+
+func TestDiscoverySelectsRootsAndFullyEmptyDirectories(t *testing.T) {
+	root := t.TempDir()
+	emptyRoot := t.TempDir()
+	for _, name := range []string{"empty", "collection/empty", "hidden-file", "symlink-only", ".hidden", "node_modules/empty", "beyond/depth/empty"} {
+		if err := os.MkdirAll(filepath.Join(root, name), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "hidden-file", ".keep"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("missing", filepath.Join(root, "symlink-only", "link")); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(t.TempDir(), "root-alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []string{"git", "all"} {
+		t.Run(mode, func(t *testing.T) {
+			cfg := defaults().Search
+			cfg.Mode = mode
+			cfg.Roots = []string{alias, root, emptyRoot}
+			cfg.ExcludeHidden = true
+			cfg.MaxDepth = 2
+			got, err := discover(context.Background(), cfg, func(s string) { t.Error(s) })
+			want := []string{root, emptyRoot, filepath.Join(root, "empty"), filepath.Join(root, "collection", "empty")}
+			if mode == "all" {
+				for _, name := range []string{"collection", "hidden-file", "symlink-only", "beyond", "beyond/depth"} {
+					want = append(want, filepath.Join(root, name))
+				}
+			}
+			sort.Strings(want)
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Fatalf("got %q %v; want %q", got, err, want)
+			}
+			for _, path := range got {
+				if err := validateProject(context.Background(), cfg, path); err != nil {
+					t.Errorf("discovered directory rejected: %s: %v", path, err)
+				}
+			}
+		})
+	}
+}
 func TestDiscoveryGitRootsAndAllDirectories(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git required")
@@ -51,7 +96,7 @@ func TestDiscoveryGitRootsAndAllDirectories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{repo, nested, work, sub, ignored}
+	want := []string{root, repo, nested, work, sub, ignored}
 	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %q want %q", got, want)
@@ -93,15 +138,12 @@ func TestDiscoveryExcludeHidden(t *testing.T) {
 			for _, excludeHidden := range []bool{false, true} {
 				cfg.ExcludeHidden = excludeHidden
 				got, err := discover(context.Background(), cfg, func(string) {})
-				want := append([]string{}, visible...)
+				want := append([]string{root}, visible...)
 				if !excludeHidden {
 					want = append(want, hidden...)
 					if mode == "all" {
 						want = append(want, collection)
 					}
-				}
-				if mode == "all" {
-					want = append(want, root)
 				}
 				sort.Strings(want)
 				if err != nil || !reflect.DeepEqual(got, want) {

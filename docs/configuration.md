@@ -65,9 +65,9 @@ exclude_hidden = false
 exclude = [".git", ".cache", "node_modules", ".venv", "target"]
 ```
 
-`mode = "git"` discovers Git working trees; `mode = "all"` makes ordinary directories eligible. Roots default to `["~"]`. `~` and `~/...` expand; other relative paths use the invocation's working directory. Arrays replace their defaults rather than concatenate.
+`mode = "git"` discovers Git working trees, the search roots themselves and fully empty directories beneath them. A directory is empty only when it contains no entries, including hidden files or symlinks. `mode = "all"` makes every ordinary directory eligible. Roots default to `["~"]`, so the home directory itself is selectable without being a Git repository. `~` and `~/...` expand; other relative paths use the invocation's working directory. Arrays replace their defaults rather than concatenate.
 
-`max_depth` limits traversal below each search root. The root is depth 0; `max_depth = 7` includes directories at depth 7 and does not read their children. The default, `0`, preserves unlimited depth. Add a deeper collection as another search root to search it independently. `--max-depth N` overrides the configured value; negative values are rejected.
+`max_depth` limits traversal below each search root. The root is depth 0; `max_depth = 7` includes eligible directories at depth 7 and does not traverse their children. The default, `0`, preserves unlimited depth. Add a deeper collection as another search root to search it independently. `--max-depth N` overrides the configured value; negative values are rejected.
 
 Set `exclude_hidden = true` to skip directories whose names start with `.` and everything beneath them in both discovery modes. It defaults to `false`; the configured `exclude` patterns still apply. Explicit search roots are honored even when dot-prefixed or inside a hidden directory; hidden descendants of those roots are still skipped. This setting only affects discovery: explicit `--directory` launches and existing live sessions remain available.
 
@@ -84,7 +84,7 @@ tmux-agent-launcher refresh --max-depth 7
 
 Refresh uses the same configuration and search overrides as a normal launch, without requiring tmux, a picker or a terminal. Changing roots, discovery mode, exclusions (including `exclude_hidden`) or depth selects a separate cache; relative roots are resolved using the invocation's directory. Use identical overrides for refresh and launch. A missing or corrupt cache is rebuilt; unavailable cache storage falls back to an uncached scan. The first scan after a settings change can still take time.
 
-Cached paths are rechecked after selection. Deleted paths, paths redirected to another canonical directory, and Git projects that lost their metadata are rejected with a refresh hint. Existing live-session selection continues to skip discovery. Cancellation starts no agent; an already started background refresh can finish independently.
+Cached paths are rechecked after selection. Deleted paths and paths redirected to another canonical directory are rejected with a refresh hint. In Git mode, a selected directory must still be a Git working tree, a search root or fully empty. An empty directory that gains contents remains eligible if it becomes a Git working tree or is a search root. Existing live-session selection continues to skip discovery. Cancellation starts no agent; an already started background refresh can finish independently.
 
 Private JSON lists and refresh locks live under `$XDG_CACHE_HOME/tmux-agent-launcher/projects` (default `~/.cache/tmux-agent-launcher/projects`). Refreshes serialize per search configuration and replace lists atomically, so readers can use the previous complete list during a refresh. These regenerable files can be removed when the launcher is not in use.
 
