@@ -5,7 +5,7 @@ presentation = "float"
 
 [search]
 roots = ["~"]
-mode = "git" # "all" makes all directories eligible.
+mode = "git" # Git working trees, search roots and empty directories; "all" permits every directory.
 max_depth = 0 # Unlimited; set 7 to include at most seven levels below each root.
 cache = true # Reuse results; stale lists refresh in the background.
 exclude_hidden = false # Skip dot-prefixed directories below each explicit root.

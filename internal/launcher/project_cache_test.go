@@ -32,7 +32,7 @@ func cacheFixture(t *testing.T) (Search, string, string) {
 
 func TestProjectCacheHitDoesNotScanAndCanBeDisabled(t *testing.T) {
 	cfg, project, path := cacheFixture(t)
-	want := []string{project}
+	want := []string{cfg.Roots[0], project}
 	for i := 0; i < 2; i++ {
 		got, err := cachedProjects(context.Background(), cfg, testLauncher, func(string) {})
 		if err != nil || !reflect.DeepEqual(got, want) {
@@ -58,7 +58,7 @@ func TestProjectCacheHitDoesNotScanAndCanBeDisabled(t *testing.T) {
 	}
 	cfg.Cache = false
 	got, err := cachedProjects(context.Background(), cfg, testLauncher, func(string) {})
-	if err != nil || len(got) != 0 {
+	if err != nil || !reflect.DeepEqual(got, []string{cfg.Roots[0]}) {
 		t.Fatalf("cache=false returned deleted project: %q %v", got, err)
 	}
 }
@@ -97,12 +97,12 @@ func TestProjectCacheCorruptionAndUnavailableStorageFallBackToDiscovery(t *testi
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, bad := range []string{`broken`, `{"version":999}`, `{"version":1,"updated_at":"2026-01-01T00:00:00Z","projects":["relative"]}`} {
+	for _, bad := range []string{`broken`, `{"version":999}`, `{"version":1,"updated_at":"2026-01-01T00:00:00Z","projects":[]}`, `{"version":2,"updated_at":"2026-01-01T00:00:00Z","projects":["relative"]}`} {
 		if err := os.WriteFile(path, []byte(bad), 0600); err != nil {
 			t.Fatal(err)
 		}
 		got, err := cachedProjects(context.Background(), cfg, testLauncher, func(string) {})
-		if err != nil || !reflect.DeepEqual(got, []string{project}) {
+		if err != nil || !reflect.DeepEqual(got, []string{cfg.Roots[0], project}) {
 			t.Fatalf("corrupt-cache fallback: %q %v", got, err)
 		}
 	}
@@ -113,7 +113,7 @@ func TestProjectCacheCorruptionAndUnavailableStorageFallBackToDiscovery(t *testi
 	t.Setenv("XDG_CACHE_HOME", blocker)
 	warnings := 0
 	got, err := cachedProjects(context.Background(), cfg, testLauncher, func(string) { warnings++ })
-	if err != nil || !reflect.DeepEqual(got, []string{project}) || warnings != 1 {
+	if err != nil || !reflect.DeepEqual(got, []string{cfg.Roots[0], project}) || warnings != 1 {
 		t.Fatalf("unavailable-cache fallback: %q %v; warnings=%d", got, err, warnings)
 	}
 }
@@ -138,7 +138,7 @@ func TestProjectCacheConcurrentColdScansAndCancelledLock(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			got, err := cachedProjects(context.Background(), cfg, testLauncher, func(string) {})
-			if err != nil || !reflect.DeepEqual(got, []string{project}) {
+			if err != nil || !reflect.DeepEqual(got, []string{cfg.Roots[0], project}) {
 				t.Errorf("concurrent cache: %q %v", got, err)
 			}
 		}()
@@ -173,6 +173,9 @@ func TestProjectCacheConcurrentColdScansAndCancelledLock(t *testing.T) {
 
 func TestCachedProjectValidationRejectsChangedRepositoryAndAlias(t *testing.T) {
 	cfg, project, _ := cacheFixture(t)
+	if err := os.WriteFile(filepath.Join(project, "file"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := validateProject(context.Background(), cfg, project); err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +185,7 @@ func TestCachedProjectValidationRejectsChangedRepositoryAndAlias(t *testing.T) {
 	if err := validateProject(context.Background(), cfg, project); err == nil {
 		t.Fatal("cached directory that lost Git metadata was accepted")
 	}
-	if err := os.Remove(project); err != nil {
+	if err := os.RemoveAll(project); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(t.TempDir(), project); err != nil {
@@ -191,6 +194,39 @@ func TestCachedProjectValidationRejectsChangedRepositoryAndAlias(t *testing.T) {
 	cfg.Mode = "all"
 	if err := validateProject(context.Background(), cfg, project); err == nil {
 		t.Fatal("cached path redirected to a different canonical project")
+	}
+}
+
+func TestCachedEmptyProjectValidation(t *testing.T) {
+	cfg, _, _ := cacheFixture(t)
+	empty := filepath.Join(cfg.Roots[0], "empty")
+	if err := os.Mkdir(empty, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		got, err := cachedProjects(context.Background(), cfg, testLauncher, func(s string) { t.Error(s) })
+		if err != nil || !contains(got, empty) {
+			t.Fatalf("empty directory missing from cache lookup %d: %q %v", i, got, err)
+		}
+	}
+	if err := validateProject(context.Background(), cfg, empty); err != nil {
+		t.Fatalf("empty directory rejected: %v", err)
+	}
+	file := filepath.Join(empty, ".keep")
+	if err := os.WriteFile(file, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateProject(context.Background(), cfg, empty); err == nil {
+		t.Fatal("cached empty directory with a new hidden file was accepted")
+	}
+	gitForTest(t, "init", "-q", empty)
+	if err := validateProject(context.Background(), cfg, empty); err != nil {
+		t.Fatalf("empty directory initialized as a repository rejected: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := validateProject(ctx, cfg, cfg.Roots[0]); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled root selection accepted: %v", err)
 	}
 }
 
@@ -252,7 +288,7 @@ func TestStaleProjectCacheDoesNotBlockPickerAndRefreshSurvivesParentExit(t *test
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("picker waited for blocked refresh: %s %v", b, err)
 	}
-	if b, err := os.ReadFile(rows); err != nil || strings.TrimSpace(string(b)) != project {
+	if b, err := os.ReadFile(rows); err != nil || strings.TrimSpace(string(b)) != cfg.Roots[0]+"\n"+project {
 		t.Fatalf("picker did not receive cached project: %q %v", b, err)
 	}
 	waitProof(t, proof)

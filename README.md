@@ -55,7 +55,7 @@ For AI-assisted installation: **“Install this project using [INSTALL.agent.md]
 
 ## Configure
 
-Defaults work without a file: Rofi, Kitty, floating windows, home search root, Git working trees and four enabled profiles. Create an example, preserving any existing configuration:
+Defaults work without a file: Rofi, Kitty, floating windows, home search root and four enabled profiles. Project selection includes Git working trees, the search roots themselves and fully empty directories. Create an example, preserving any existing configuration:
 
 ```sh
 tmux-agent-launcher config init
