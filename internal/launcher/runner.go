@@ -14,6 +14,7 @@ type launchPayload struct {
 	Command, Env []string
 	Directory    string
 	Shell        string
+	ShellTmux    []string
 }
 
 func agentEnv(inherited []string, overrides map[string]string) []string {

@@ -228,7 +228,19 @@ func (t Tmux) ensure(ctx context.Context, c Config, profile, project, self strin
 	if _, err := resolveExecutable(p.executable(), env, project); err != nil {
 		return Session{}, fmt.Errorf("profile %s: %w", profile, err)
 	}
-	payload, err := writePayload(launchPayload{Command: p.Command, Env: env, Directory: project, Shell: p.Shell})
+	launch := launchPayload{Command: p.Command, Env: env, Directory: project, Shell: p.Shell}
+	if p.Shell != "" {
+		tmuxExe, err := exec.LookPath("tmux")
+		if err != nil {
+			return Session{}, err
+		}
+		tmuxExe, err = filepath.Abs(tmuxExe)
+		if err != nil {
+			return Session{}, err
+		}
+		launch.ShellTmux = []string{tmuxExe, "-S", socket}
+	}
+	payload, err := writePayload(launch)
 	if err != nil {
 		return Session{}, err
 	}
