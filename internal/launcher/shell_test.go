@@ -19,7 +19,7 @@ func TestShellLaunchLoadsStartupBeforeAliasAndKeepsShell(t *testing.T) {
 		}
 		t.Skip("Zsh is unavailable")
 	}
-	tm := disposableTmux(t)
+	tm := shellFixtureTmux(t)
 	home := t.TempDir()
 	project := filepath.Join(t.TempDir(), "project space.#'literal")
 	if err := os.Mkdir(project, 0700); err != nil {
@@ -166,7 +166,7 @@ func TestShellLaunchPreservesZdotdirAndNestedShells(t *testing.T) {
 	}
 	for _, inherited := range []bool{false, true} {
 		t.Run(fmt.Sprintf("inherited=%v", inherited), func(t *testing.T) {
-			tm := disposableTmux(t)
+			tm := shellFixtureTmux(t)
 			home := t.TempDir()
 			dotdir := filepath.Join(t.TempDir(), "startup space'quoted")
 			if err := os.Mkdir(dotdir, 0700); err != nil {
@@ -238,4 +238,27 @@ fixture_agent() {
 			}
 		})
 	}
+}
+
+func shellFixtureTmux(t *testing.T) Tmux {
+	t.Helper()
+	tm := disposableTmux(t)
+	t.Cleanup(func() {
+		if !t.Failed() {
+			return
+		}
+		sessions, _ := tm.output(context.Background(), "list-sessions", "-F", "#{session_id}")
+		for _, id := range strings.Fields(sessions) {
+			for _, option := range []string{"@tmux_agent_launcher", "@tmux_agent_profile", "@tmux_agent_project"} {
+				value, err := tm.output(context.Background(), "show-options", "-qv", "-t", id, option)
+				t.Logf("shell fixture %s %s=%q (%v)", id, option, value, err)
+			}
+		}
+		panes, _ := tm.output(context.Background(), "list-panes", "-a", "-F", "#{pane_id}")
+		for _, pane := range strings.Fields(panes) {
+			output, err := tm.output(context.Background(), "capture-pane", "-p", "-S", "-100", "-t", pane)
+			t.Logf("shell fixture pane %s: %s (%v)", pane, output, err)
+		}
+	})
+	return tm
 }
