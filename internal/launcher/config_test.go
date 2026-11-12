@@ -19,6 +19,7 @@ max_depth=7
 cache=false
 [profiles.codex]
 label="Custom Codex"
+shell="zsh"
 env={EXAMPLE="new"}
 [profiles.experimental]
 command=["agent", "argument with spaces", ""]
@@ -36,6 +37,9 @@ enabled=false
 	}
 	if !reflect.DeepEqual(c.Profiles["codex"].Command, []string{"codex", "--yolo"}) || c.Profiles["codex"].Label != "Custom Codex" {
 		t.Fatal("field overrides replaced a preset")
+	}
+	if c.Profiles["codex"].Shell != "zsh" || defaults().Profiles["codex"].Shell != "" {
+		t.Fatal("explicit shell selection or direct default lost")
 	}
 	if len(c.Search.Exclude) != 0 || !reflect.DeepEqual(c.Search.Roots, []string{"/projects"}) || c.Search.Mode != "git" {
 		t.Fatal("arrays or omitted defaults merged incorrectly")
@@ -62,6 +66,15 @@ max_depth=-1`} {
 		}
 		if err == nil {
 			t.Fatalf("accepted invalid config %q", bad)
+		}
+	}
+	for _, shell := range []string{"bash", "zsh -il", "zsh\n", "zsh\x00"} {
+		c := defaults()
+		p := c.Profiles["codex"]
+		p.Shell = shell
+		c.Profiles["codex"] = p
+		if err := c.validate(); err == nil {
+			t.Fatalf("accepted unsupported interactive shell %q", shell)
 		}
 	}
 }

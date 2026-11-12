@@ -225,10 +225,10 @@ func (t Tmux) ensure(ctx context.Context, c Config, profile, project, self strin
 		return Session{}, fmt.Errorf("profile %q is disabled", profile)
 	}
 	env := agentEnv(os.Environ(), p.Env)
-	if _, err := resolveExecutable(p.Command[0], env, project); err != nil {
+	if _, err := resolveExecutable(p.executable(), env, project); err != nil {
 		return Session{}, fmt.Errorf("profile %s: %w", profile, err)
 	}
-	payload, err := writePayload(launchPayload{Command: p.Command, Env: env, Directory: project})
+	payload, err := writePayload(launchPayload{Command: p.Command, Env: env, Directory: project, Shell: p.Shell})
 	if err != nil {
 		return Session{}, err
 	}

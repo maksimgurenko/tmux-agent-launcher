@@ -269,8 +269,8 @@ func chooseSession(ctx context.Context, c Config, t Tmux, filter, self string) (
 			continue
 		}
 		env := agentEnv(os.Environ(), p.Env)
-		if !projectDependentExecutable(p.Command[0], env) {
-			if _, err := resolveExecutable(p.Command[0], env, ""); err != nil {
+		if !projectDependentExecutable(p.executable(), env) {
+			if _, err := resolveExecutable(p.executable(), env, ""); err != nil {
 				continue
 			}
 		}
@@ -357,17 +357,21 @@ func doctor(ctx context.Context, c Config, t Tmux) error {
 			continue
 		}
 		env := agentEnv(os.Environ(), p.Env)
-		if projectDependentExecutable(p.Command[0], env) {
+		if projectDependentExecutable(p.executable(), env) {
 			available++
 			fmt.Printf("INFO profile %s: executable checked after project selection\n", id)
 			continue
 		}
-		_, err := resolveExecutable(p.Command[0], env, "")
+		_, err := resolveExecutable(p.executable(), env, "")
 		if err != nil {
 			fmt.Printf("INFO profile %s: executable unavailable\n", id)
 		} else {
 			available++
-			fmt.Printf("OK   profile %s\n", id)
+			if p.Shell != "" {
+				fmt.Printf("OK   profile %s: shell %s; agent resolved after shell startup\n", id, p.Shell)
+			} else {
+				fmt.Printf("OK   profile %s\n", id)
+			}
 		}
 	}
 	if available == 0 {

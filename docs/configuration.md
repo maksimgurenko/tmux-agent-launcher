@@ -37,6 +37,7 @@ Override a preset or add another named profile:
 ```toml
 [profiles.codex]
 command = ["codex", "--yolo"]
+shell = "zsh" # Optional; omit for direct execution.
 
 [profiles.codex-work]
 label = "Codex (work)"
@@ -50,6 +51,18 @@ enabled = false
 IDs allow letters, digits, underscores and hyphens. An added profile requires a nonempty command array; its label defaults to its ID, and `enabled` defaults to true. Omitted preset fields remain intact. Command arrays replace the whole command, with each argument represented separately. Environment maps replace that profile's configured map and override inherited values for the agent process. Credentials and native agent settings stay with the agent CLI or inherited environment.
 
 Each new agent receives the launcher's current environment snapshot plus its profile overrides and tmux connection variables. If the snapshot omits TERM, the agent receives tmux's terminal type. Unrelated variables removed from the launcher environment are not restored from an older tmux server. Relative commands and relative or empty PATH entries resolve against the selected project directory. The menu and `doctor` defer these executable checks until a project is selected.
+
+### Interactive shell profiles
+
+Set `shell = "zsh"` (or a path to an executable named `zsh`) to start a login/interactive shell in the selected project instead of executing the command directly. The default, an omitted or empty `shell`, preserves direct execution and its existing lifecycle. Shell arguments such as `"zsh -il"` are not accepted in this field. Automatic shell startup currently supports Zsh only; Bash and Fish are not adapters for this mode.
+
+The normal `.zshenv`, `.zprofile`, `.zshrc` and `.zlogin` startup chain runs before the command. Existing `ZDOTDIR`, including changes made by `.zshenv`, is respected. Once startup and the first prompt hooks finish, a one-time line-editor hook enters the configured command. It resolves shell functions and aliases and uses the initialized PATH and environment, including editor settings. Each argument remains a quoted literal, including empty strings and shell metacharacters. Profile environment overrides initialize the shell; user startup files can subsequently change those values.
+
+The menu checks the selected shell rather than requiring the agent executable to exist before startup. This permits commands provided by shell functions, aliases or startup PATH changes. `doctor` reports that the agent will be resolved after shell startup. A missing agent command is reported by the interactive shell, which remains open so the user can correct it.
+
+After the agent exits, its shell remains usable and the managed session remains attachable. A new attachment or nested shell does not automatically start the agent again. Profile changes apply to new sessions; existing sessions retain their current process. Close the shell to end a shell profile's session.
+
+The launcher does not edit startup files. A private, one-use `.zshenv` shim restores the original `ZDOTDIR`, removes itself, loads the user's `.zshenv`, and registers the first-prompt hook. The temporary directory is mode 0700 and its file is mode 0600. It uses the invoking environment's `TMPDIR`, defaulting to `/tmp`. An interruption before shell startup can leave that directory, as with a launch snapshot. This mode requires normal Zsh startup and enabled ZLE; startup files that deliberately exit or disable those facilities cannot provide automatic prompt entry.
 
 `codex-work` gets distinct sessions from `codex`, even when both launch the same CLI. Disabling/removing a profile or uninstalling its executable does not hide its live sessions.
 

@@ -14,6 +14,7 @@ exclude = [".git", ".cache", "node_modules", ".venv", "target"]
 [profiles.codex]
 label = "Codex"
 command = ["codex", "--yolo"]
+# shell = "zsh" # Load login/interactive configuration, enter the command once, keep the shell on exit.
 
 [profiles.claude]
 label = "Claude"

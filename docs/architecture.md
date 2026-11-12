@@ -21,10 +21,12 @@ The implementation stays in one internal Go package because these components ser
 2. Offer managed live sessions and new-session actions for enabled profiles with available executables; defer project-dependent executable checks until a project is selected. Selecting a live session skips discovery and does not require its original profile or executable.
 3. Load cached project directories or discover them beneath search roots, or accept `--directory` with an explicit profile. Revalidate a selected project before creating a session. Canonicalize directory aliases before computing session identity.
 4. Lock that profile/directory identity on the canonical tmux socket path and check again for an existing session. Concurrent launches through equivalent server connections reuse one session.
-5. For a new session, start the same executable as a short-lived runner. It reads a restricted launch snapshot, removes the snapshot, changes directory and replaces itself with the native agent process.
+5. For a new session, start the same executable as a short-lived runner. It reads a restricted launch snapshot, removes the snapshot and changes directory. Direct profiles replace it with the native agent process. Explicit shell profiles replace it with a login/interactive Zsh and a private startup shim that enters the configured command once after the first prompt initializes.
 6. Attach by stable tmux session ID, retaining the selected tmux socket. A new terminal receives the attachment command as arguments.
 
-Agent exit ends the session. Closing a terminal detaches its client without ending a running agent. There is no extra shell kept alive after agent exit, saved-conversation index or agent-team orchestration.
+Agent exit ends a direct profile's session. A shell profile returns to its interactive shell and ends when that shell exits. Closing a terminal detaches its client without ending either kind of live session. There is no saved-conversation index or agent-team orchestration.
+
+Shell startup lives in `internal/launcher/shell.go` behind the per-profile `shell` setting. The launcher owns the startup hook; user dotfiles are never edited. A one-use 0600 `.zshenv` in a private 0700 directory restores the original `ZDOTDIR` before loading the user's startup chain. A first-prompt hook installs a one-time ZLE widget alongside existing widgets. It queues a quoted command line only after startup/prompt initialization, removes itself, and leaves nested shells and reattachment unaffected. Simple non-reserved command names permit normal alias resolution; arguments stay literal. The initial environment snapshot remains authoritative relative to the old tmux server, while the user's shell startup may intentionally modify it. Shell profiles check shell availability before startup and let the initialized shell resolve the agent.
 
 ## Session identity and names
 
