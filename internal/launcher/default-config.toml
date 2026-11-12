@@ -1,4 +1,4 @@
-# Defaults work without a config file. Argument arrays are never shell-evaluated.
+# Defaults use direct execution. Optional shell profiles keep arguments literal.
 picker = "rofi"
 terminal = "kitty"
 presentation = "float"

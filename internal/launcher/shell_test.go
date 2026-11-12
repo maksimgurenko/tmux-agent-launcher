@@ -33,8 +33,10 @@ func TestShellLaunchLoadsStartupBeforeAliasAndKeepsShell(t *testing.T) {
 	os.Unsetenv("EDITOR")
 	proof := filepath.Join(home, "proof")
 	t.Setenv("SHELL_FIXTURE_PROOF", proof)
+	// Ubuntu global compinit can prompt on hosted runners. Completion is not
+	// part of this fixture; keep startup deterministic via its documented switch.
 	files := map[string]string{
-		".zshenv":   "export SHELL_FIXTURE_ENV=env\n",
+		".zshenv":   "skip_global_compinit=1\nexport SHELL_FIXTURE_ENV=env\n",
 		".zprofile": "export SHELL_FIXTURE_PROFILE=profile\n",
 		".zlogin":   "export SHELL_FIXTURE_LOGIN=login\n",
 		".zshrc": `export EDITOR=nvim
@@ -180,8 +182,8 @@ func TestShellLaunchPreservesZdotdirAndNestedShells(t *testing.T) {
 				wantOrigin = "home"
 			}
 			files := map[string]string{
-				filepath.Join(home, ".zshenv"):   "export SHELL_FIXTURE_ORIGIN=home\nexport ZDOTDIR=" + shellQuote(dotdir) + "\n",
-				filepath.Join(dotdir, ".zshenv"): "export SHELL_FIXTURE_ORIGIN=dotdir\n",
+				filepath.Join(home, ".zshenv"):   "skip_global_compinit=1\nexport SHELL_FIXTURE_ORIGIN=home\nexport ZDOTDIR=" + shellQuote(dotdir) + "\n",
+				filepath.Join(dotdir, ".zshenv"): "skip_global_compinit=1\nexport SHELL_FIXTURE_ORIGIN=dotdir\n",
 				filepath.Join(dotdir, ".zshrc"): `PROMPT='fixture> '
 export EDITOR=fixture-editor
 fixture_agent() {
@@ -247,6 +249,8 @@ func shellFixtureTmux(t *testing.T) Tmux {
 		if !t.Failed() {
 			return
 		}
+		raw, _ := tm.output(context.Background(), "list-sessions", "-F", "#{session_id}\t#{session_name}")
+		t.Logf("raw shell sessions: %q", raw)
 		sessions, _ := tm.output(context.Background(), "list-sessions", "-F", "#{session_id}")
 		for _, id := range strings.Fields(sessions) {
 			for _, option := range []string{"@tmux_agent_launcher", "@tmux_agent_profile", "@tmux_agent_project"} {
@@ -257,7 +261,9 @@ func shellFixtureTmux(t *testing.T) Tmux {
 		panes, _ := tm.output(context.Background(), "list-panes", "-a", "-F", "#{pane_id}")
 		for _, pane := range strings.Fields(panes) {
 			output, err := tm.output(context.Background(), "capture-pane", "-p", "-S", "-100", "-t", pane)
-			t.Logf("shell fixture pane %s: %s (%v)", pane, output, err)
+			if output = strings.TrimSpace(output); output != "" || err != nil {
+				t.Logf("shell fixture pane %s: %s (%v)", pane, output, err)
+			}
 		}
 	})
 	return tm
