@@ -9,11 +9,13 @@ tmux-agent-launcher --picker fzf --terminal foot --presentation tile
 
 Built-in profiles run **Codex `--yolo`, Claude `--dangerously-skip-permissions`, Pi `--approve`, and OpenCode `--auto`**. These defaults enable the supported unattended modes. Pi normally has no per-tool approval prompts; its flag trusts project configuration for this process. OpenCode's mode honors explicit denies. Change the command arrays to choose different policies. Authentication and native agent settings stay with each CLI. [Upstream flag references](docs/upstream.md).
 
-One live tmux session belongs to each profile and canonical project directory. Its name stays readable: `/codex/absolute/path/to/project/`. Repeated launches attach the same session in a fresh terminal. Profile edits affect future sessions; removed/disabled profiles and missing agent executables do not hide their live sessions. Existing `/codex/.../` and `/claude/.../` sessions are recognized. Sessions end when their agent exits. Saved conversations and agent orchestration are outside this tool's scope.
+One live tmux session belongs to each profile and canonical project directory. Its name stays readable: `/codex/absolute/path/to/project/`. Repeated launches attach the same session in a fresh terminal. Profile edits affect future sessions; removed/disabled profiles and missing agent executables do not hide their live sessions. Existing `/codex/.../` and `/claude/.../` sessions are recognized. Direct profiles end their session when the agent exits; optional interactive-shell profiles return to their shell. Saved conversations and agent orchestration are outside this tool's scope.
 
 ## Requirements
 
 Linux; **tmux 3.7c or later** for literal punctuation in names; one selected picker (Rofi, Fuzzel, Wofi or fzf); one selected terminal (Kitty, Foot, Alacritty, WezTerm or custom argv). Git is required for Git discovery, the default. Install the agent CLIs you want independently.
+
+Interactive-shell profiles additionally require Zsh. Other shells can still be used explicitly in direct command arrays, but automatic first-prompt entry currently supports Zsh only.
 
 Hyprland is optional. Floating/tiling flags set `tmux-floating` / `tmux-tiling` window identities; placement requires compositor rules. Graphical pickers need their normal graphical session. fzf needs a TTY: a desktop launch opens one fresh terminal for selection and attachment; a launch from an existing TTY selects there and attaches in a fresh terminal.
 
@@ -79,6 +81,16 @@ command = ["codex", "--yolo"]
 ```
 
 See the [configuration guide](docs/configuration.md) for all fields, profile overrides, exclusions, custom terminals including Ghostty, menu providers and CLI examples. Arrays contain separate arguments and replace defaults; no implicit shell evaluation is added. Existing live sessions keep their running agent after profile edits.
+
+To load your normal shell configuration before an agent starts, opt in per profile:
+
+```toml
+[profiles.codex]
+command = ["codex", "--yolo"]
+shell = "zsh"
+```
+
+This starts a login/interactive Zsh inside tmux, loads its normal startup files, and enters the configured command once at the first prompt. Shell functions, aliases and startup PATH/editor settings are available. Arguments are quoted as literal values. Quitting the agent returns to that shell; exiting the shell ends the session. Reattachment does not enter the command again. No edits to your startup files are needed. Omit `shell` to retain direct execution.
 
 Project searches reuse a persistent cache. Lists older than five minutes refresh in the background when used; run `tmux-agent-launcher refresh` to include new projects immediately. The first uncached search still scans. `max_depth = 7` bounds that work to seven levels below each root; omitted or `0` means unlimited. Use matching configuration/CLI overrides for refresh and launch.
 

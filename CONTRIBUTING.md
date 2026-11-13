@@ -2,12 +2,12 @@
 
 Source layout and session behavior are documented in [docs/architecture.md](docs/architecture.md). Keep application source and adjacent tests under `internal/launcher/`, the entry point under `cmd/tmux-agent-launcher/`, and maintained tooling under `scripts/`. Project documentation and decision records live in this repository.
 
-Use Go 1.26+, Git, tmux 3.7c+ and GNU installer utilities on Linux. Ordinary tests check configuration, discovery, adapters and disposable installation. Integration tests require compatible tmux; `REQUIRE_TMUX=1` turns a missing/incompatible binary into a failure.
+Use Go 1.26+, Git, tmux 3.7c+, Zsh and GNU installer utilities on Linux. Ordinary tests check configuration, discovery, adapters and disposable installation. Integration tests require compatible tmux; `REQUIRE_TMUX=1` turns a missing/incompatible binary into a failure. `REQUIRE_ZSH=1` requires the real Zsh startup tests instead of skipping them when Zsh is absent.
 
 ```sh
 gofmt -w cmd internal scripts
 go vet ./...
-REQUIRE_TMUX=1 go test -race ./...
+REQUIRE_TMUX=1 REQUIRE_ZSH=1 go test -race ./...
 ./scripts/build.sh
 ./scripts/release.sh v0.1.1
 ```

@@ -16,10 +16,18 @@ type Profile struct {
 	Label   string            `toml:"label"`
 	Enabled *bool             `toml:"enabled"`
 	Command []string          `toml:"command"`
+	Shell   string            `toml:"shell"`
 	Env     map[string]string `toml:"env"`
 }
 
 func (p Profile) enabled() bool { return p.Enabled == nil || *p.Enabled }
+
+func (p Profile) executable() string {
+	if p.Shell != "" {
+		return p.Shell
+	}
+	return p.Command[0]
+}
 
 type Search struct {
 	Roots         []string `toml:"roots"`
@@ -117,6 +125,9 @@ func loadConfig(path string, explicit bool) (Config, error) {
 		if m.IsDefined("profiles", id, "command") {
 			v.Command = p.Command
 		}
+		if m.IsDefined("profiles", id, "shell") {
+			v.Shell = p.Shell
+		}
 		if m.IsDefined("profiles", id, "env") {
 			v.Env = p.Env
 		}
@@ -175,6 +186,9 @@ func (c Config) validate() error {
 		}
 		if err := validArgv(p.Command); err != nil {
 			return fmt.Errorf("profile %s: %w", id, err)
+		}
+		if p.Shell != "" && (filepath.Base(p.Shell) != "zsh" || hasControl(p.Shell)) {
+			return fmt.Errorf("profile %s: shell must be zsh or a path to zsh; omit shell for direct execution", id)
 		}
 		for k, v := range p.Env {
 			if k == "" || strings.ContainsAny(k, "=\x00") || strings.ContainsRune(v, 0) {

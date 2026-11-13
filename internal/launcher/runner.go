@@ -13,6 +13,8 @@ import (
 type launchPayload struct {
 	Command, Env []string
 	Directory    string
+	Shell        string
+	ShellTmux    []string
 }
 
 func agentEnv(inherited []string, overrides map[string]string) []string {
@@ -131,6 +133,9 @@ func runAgent(path string) error {
 				env = append(env, k+"="+v)
 			}
 		}
+	}
+	if p.Shell != "" {
+		return runInteractiveShell(p, env)
 	}
 	exe, err := resolveExecutable(p.Command[0], env, p.Directory)
 	if err != nil {
