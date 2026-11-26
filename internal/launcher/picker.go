@@ -7,16 +7,26 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
 var errCancelled = errors.New("cancelled")
 
+func rofiCommand(args ...string) []string {
+	cmd := []string{"rofi"}
+	theme := filepath.Join(xdgPath("XDG_CONFIG_HOME", ".config"), "tmux-agent-launcher", "rofi.rasi")
+	if info, err := os.Stat(theme); err == nil && info.Mode().IsRegular() {
+		cmd = append(cmd, "-theme", theme)
+	}
+	return append(cmd, args...)
+}
+
 func pickerCommand(backend, prompt string) []string {
 	switch backend {
 	case "rofi":
-		return []string{"rofi", "-dmenu", "-i", "-no-case-smart", "-format", "i", "-no-custom", "-p", prompt}
+		return rofiCommand("-dmenu", "-i", "-no-case-smart", "-format", "i", "-no-custom", "-p", prompt)
 	case "fuzzel":
 		// Fuzzel always matches case insensitively.
 		return []string{"fuzzel", "--dmenu", "--index", "--prompt", prompt + ": "}

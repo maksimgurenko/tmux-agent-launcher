@@ -12,6 +12,27 @@ import (
 	"time"
 )
 
+func TestOptionalRofiTheme(t *testing.T) {
+	config := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", config)
+	args := []string{"rofi", "-dmenu", "-i", "-no-case-smart", "-format", "i", "-no-custom", "-p", "Project"}
+	if got := pickerCommand("rofi", "Project"); !reflect.DeepEqual(got, args) {
+		t.Fatalf("default invocation: %q", got)
+	}
+	dir := filepath.Join(config, "tmux-agent-launcher")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	theme := filepath.Join(dir, "rofi.rasi")
+	if err := os.WriteFile(theme, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	want := append([]string{"rofi", "-theme", theme}, args[1:]...)
+	if got := pickerCommand("rofi", "Project"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("themed invocation: got %q, want %q", got, want)
+	}
+}
+
 func TestPickerCaseInsensitiveMatching(t *testing.T) {
 	labels := []string{"New [test] Example", "new [test] example", "NEW [test] EXAMPLE", "Attach [test] Elsewhere"}
 	for _, backend := range []string{"rofi", "fzf"} {

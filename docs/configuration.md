@@ -10,6 +10,8 @@ Existing files are preserved. `--config FILE` selects another file and fails if 
 
 ## Terminal and menu
 
+To theme the Rofi session and project pickers, place a Rasi theme at `$XDG_CONFIG_HOME/tmux-agent-launcher/rofi.rasi` (normally `~/.config/tmux-agent-launcher/rofi.rasi`). If the file is absent, Rofi uses its usual theme.
+
 Place top-level keys before any TOML table:
 
 ```toml
