@@ -14,6 +14,7 @@ import (
 
 var errCancelled = errors.New("cancelled")
 
+// The optional user theme is shared by dmenu and the interactive path picker.
 func rofiCommand(args ...string) []string {
 	cmd := []string{"rofi"}
 	theme := filepath.Join(xdgPath("XDG_CONFIG_HOME", ".config"), "tmux-agent-launcher", "rofi.rasi")
@@ -91,4 +92,19 @@ func pick(ctx context.Context, backend, prompt string, labels []string) (int, er
 		return 0, fmt.Errorf("%s picker failed: %w %s", backend, err, strings.TrimSpace(stderr.String()))
 	}
 	return parseSelection(backend, out.String(), labels)
+}
+
+func pickProject(ctx context.Context, backend string, search Search, dirs []string, self string) (string, error) {
+	labels := dirs
+	if backend == "rofi" {
+		labels = append(labels, "Enter path…")
+	}
+	i, err := pick(ctx, backend, "Project", labels)
+	if err != nil {
+		return "", err
+	}
+	if i == len(dirs) {
+		return chooseDirectory(ctx, self, nil)
+	}
+	return dirs[i], validateProject(ctx, search, dirs[i])
 }

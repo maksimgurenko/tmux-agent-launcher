@@ -18,7 +18,7 @@ for arch in amd64 arm64; do
     mkdir -p -- "$stage/scripts"
     cp -- scripts/install.sh "$stage/scripts/"
     cp -- internal/launcher/default-config.toml "$stage/examples/config.toml"
-    cp -- examples/hyprland.lua "$stage/examples/"
+    cp -- examples/hyprland.lua examples/tmux-agent-launcher-folders.service "$stage/examples/"
     cp -R -- docs "$stage/docs"
     tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner \
         -C "$tmp/$arch" -czf "$out/tmux-agent-launcher-${version}-linux-${arch}.tar.gz" tmux-agent-launcher

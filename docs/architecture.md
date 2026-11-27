@@ -34,6 +34,8 @@ At the main prompt, the callback closes its descriptor and temporarily binds one
 
 Identity is the pair of profile ID and canonical project directory. Names retain `/{profile}/absolute/project/path/`; distinct profiles can run the same agent independently in one project. tmux 3.7c+ is required to preserve literal punctuation. Format-sensitive characters are escaped when passing names to tmux; later operations target session IDs.
 
+For a remote launch, the destination canonicalizes the project directory over authenticated HTTP. The local Codex TUI starts in the local home directory and receives the remote path through `-C`. Its tmux name is `/{host}/{profile}/absolute/project/path/`, with a trailing `-peer` omitted from the profile for display. A name collision uses a qualified name. The host participates in the identity lock and is recorded in session-local metadata for reattachment after a peer configuration change.
+
 Session-local ownership metadata identifies launcher sessions even after profiles are disabled or removed. Legacy `/codex/.../` and `/claude/.../` sessions are recognized without renaming. Inherited global metadata does not make ordinary sessions belong to the launcher.
 
 ## Discovery and adapters
@@ -42,7 +44,7 @@ Git discovery recognizes working trees, nested repositories, submodules and link
 
 An optional depth limit includes its boundary directories and prunes their children; each explicit root starts at depth 0. Unlimited depth remains the default. Project lists are cached by search settings and expanded absolute roots. A cache hit does not touch search roots. Lists older than five minutes trigger a detached, bounded refresh through the same executable; each picker uses a fixed snapshot. Cold searches populate the cache synchronously, and `refresh` explicitly rebuilds it without opening a UI. Per-cache locks prevent duplicate scans during concurrent cold launches; atomic replacement preserves complete snapshots for readers. Cache failures fall back to discovery. Selected cached paths must still be canonical, accessible directories and eligible for the selected discovery mode.
 
-Rofi, Fuzzel, Wofi and fzf adapters validate selection identity instead of resolving ambiguous labels. Cancellation returns without launching anything. For desktop fzf launches, one terminal hosts both selection and attachment; cancellation closes that window.
+Rofi, Fuzzel, Wofi and fzf adapters validate selection identity instead of resolving ambiguous labels. The Rofi project menu also offers a script mode that updates directory suggestions as the user edits a path. The chosen directory follows the same canonicalization and session identity rules as an explicit `--directory`. Cancellation returns without launching anything. For desktop fzf launches, one terminal hosts both selection and attachment; cancellation closes that window.
 
 Kitty, Foot, Alacritty, WezTerm and custom terminal templates preserve argument boundaries. `float` and `tile` select window identities, while the compositor controls actual placement. Configuration arrays never implicitly invoke a shell.
 

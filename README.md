@@ -94,6 +94,8 @@ This starts a login/interactive Zsh inside tmux, loads its normal startup files,
 
 Project searches reuse a persistent cache. Lists older than five minutes refresh in the background when used; run `tmux-agent-launcher refresh` to include new projects immediately. The first uncached search still scans. `max_depth = 7` bounds that work to seven levels below each root; omitted or `0` means unlimited. Use matching configuration/CLI overrides for refresh and launch.
 
+Configure a peer to open its folders in the local Rofi picker and run the local Codex TUI against its app server. The launcher can also serve folder searches for other machines. [Remote Codex setup](docs/configuration.md#remote-codex)
+
 ## Desktop integration
 
 Merge the small [Hyprland 0.55+ Lua example](examples/hyprland.lua) into your configuration, choosing unused bindings, then run `hyprctl reload`. Use `hyprctl clients` to verify the window's class and floating state. Other compositors need equivalent rules. The installer never edits desktop configuration. New attachments open fresh windows; it does not focus or recycle existing windows. WezTerm starts a new process to preserve window-class selection.

@@ -18,7 +18,7 @@ import (
 const ownerKey = "@tmux_agent_launcher"
 const ownerValue = "v1"
 
-type Session struct{ ID, Name, Profile, Project string }
+type Session struct{ ID, Name, Profile, Project, Host string }
 type Tmux struct{ Prefix []string }
 
 func (t Tmux) command(ctx context.Context, args ...string) *exec.Cmd {
@@ -92,6 +92,10 @@ func (t Tmux) sessions(ctx context.Context) ([]Session, error) {
 			if err != nil {
 				continue
 			}
+			s.Host, err = t.output(ctx, "show-options", "-qv", "-t", id, "@tmux_agent_host")
+			if err != nil || (s.Host != "" && !validHost(s.Host)) {
+				continue
+			}
 			if !profileID.MatchString(s.Profile) || !filepath.IsAbs(s.Project) || hasControl(s.Project) {
 				continue
 			}
@@ -107,6 +111,17 @@ func (t Tmux) sessions(ctx context.Context) ([]Session, error) {
 	return a, nil
 }
 func sessionName(profile, project string) string { return "/" + profile + project + "/" }
+func remoteSessionName(host, profile, project string) string {
+	if base, ok := strings.CutSuffix(profile, "-peer"); ok && base != "" {
+		profile = base
+	}
+	return "/" + host + sessionName(profile, project)
+}
+
+func duplicateSession(err error) bool {
+	return err != nil && strings.HasPrefix(err.Error(), "tmux: duplicate session: ")
+}
+
 func (t Tmux) attachCommand(ctx context.Context, id string) ([]string, error) {
 	socket, err := t.output(ctx, "display-message", "-p", "-t", id, "#{socket_path}")
 	if err != nil {
@@ -114,9 +129,9 @@ func (t Tmux) attachCommand(ctx context.Context, id string) ([]string, error) {
 	}
 	return []string{"tmux", "-S", socket, "attach-session", "-t", id}, nil
 }
-func findSession(sessions []Session, profile, project string) (Session, bool) {
+func findSession(sessions []Session, profile, project, host string) (Session, bool) {
 	for _, s := range sessions {
-		if s.Profile == profile && s.Project == project {
+		if s.Profile == profile && s.Project == project && s.Host == host {
 			return s, true
 		}
 	}
@@ -177,6 +192,10 @@ func (t Tmux) socketIdentity() (string, error) {
 }
 
 func (t Tmux) ensure(ctx context.Context, c Config, profile, project, self string) (Session, error) {
+	return t.ensureProject(ctx, c, profile, project, self, nil)
+}
+
+func (t Tmux) ensureProject(ctx context.Context, c Config, profile, project, self string, peer *Peer) (Session, error) {
 	if err := t.checkVersion(ctx); err != nil {
 		return Session{}, err
 	}
@@ -184,7 +203,15 @@ func (t Tmux) ensure(ctx context.Context, c Config, profile, project, self strin
 	if err != nil {
 		return Session{}, fmt.Errorf("identify tmux server: %w", err)
 	}
-	key := sha256.Sum256([]byte(socket + "\x00" + profile + "\x00" + project))
+	identity := socket + "\x00" + profile + "\x00" + project
+	host := ""
+	name := sessionName(profile, project)
+	if peer != nil {
+		host = peer.Host
+		identity += "\x00" + host
+		name = "/@remote/" + host + name
+	}
+	key := sha256.Sum256([]byte(identity))
 	lockdir := filepath.Join(xdgPath("XDG_CACHE_HOME", ".cache"), "tmux-agent-launcher", "locks")
 	if err := os.MkdirAll(lockdir, 0700); err != nil {
 		return Session{}, err
@@ -214,7 +241,7 @@ func (t Tmux) ensure(ctx context.Context, c Config, profile, project, self strin
 	if err != nil {
 		return Session{}, err
 	}
-	if s, ok := findSession(sessions, profile, project); ok {
+	if s, ok := findSession(sessions, profile, project, host); ok {
 		return s, nil
 	}
 	p, ok := c.Profiles[profile]
@@ -225,10 +252,26 @@ func (t Tmux) ensure(ctx context.Context, c Config, profile, project, self strin
 		return Session{}, fmt.Errorf("profile %q is disabled", profile)
 	}
 	env := agentEnv(os.Environ(), p.Env)
-	if _, err := resolveExecutable(p.executable(), env, project); err != nil {
+	dir := project
+	command := p.Command
+	if peer != nil {
+		dir, err = os.UserHomeDir()
+		if err != nil {
+			return Session{}, err
+		}
+		token, err := peerToken(peer.CodexTokenFile, peer.CodexTokenEnv, envValue(env, peer.CodexTokenEnv))
+		if err != nil {
+			return Session{}, fmt.Errorf("%s: %w", host, err)
+		}
+		if peer.CodexTokenFile != "" {
+			env = agentEnv(env, map[string]string{peer.CodexTokenEnv: token})
+		}
+		command = append(append([]string{}, command...), "--remote", peer.Endpoint, "--remote-auth-token-env", peer.CodexTokenEnv, "-C", project)
+	}
+	if _, err := resolveExecutable(p.executable(), env, dir); err != nil {
 		return Session{}, fmt.Errorf("profile %s: %w", profile, err)
 	}
-	launch := launchPayload{Command: p.Command, Env: env, Directory: project, Shell: p.Shell}
+	launch := launchPayload{Command: command, Env: env, Directory: dir, Shell: p.Shell}
 	if p.Shell != "" {
 		tmuxExe, err := exec.LookPath("tmux")
 		if err != nil {
@@ -244,9 +287,24 @@ func (t Tmux) ensure(ctx context.Context, c Config, profile, project, self strin
 	if err != nil {
 		return Session{}, err
 	}
-	name := sessionName(profile, project)
 	// -s is a tmux format. Escape every # so path contents stay literal.
-	id, err := t.output(ctx, "new-session", "-d", "-P", "-F", "#{session_id}", "-s", strings.ReplaceAll(name, "#", "##"), "-c", project, self, "__run-agent", payload)
+	start := func(name string) (string, error) {
+		return t.output(ctx, "new-session", "-d", "-P", "-F", "#{session_id}", "-s", strings.ReplaceAll(name, "#", "##"), "-c", dir, self, "__run-agent", payload)
+	}
+	id, err := start(name)
+	if peer == nil && duplicateSession(err) {
+		// A remote host may share its name with a local profile.
+		current, listErr := t.sessions(ctx)
+		if listErr == nil {
+			for _, other := range current {
+				if other.Host != "" && other.Name == name {
+					name = "/@local" + name
+					id, err = start(name)
+					break
+				}
+			}
+		}
+	}
 	if err != nil {
 		os.RemoveAll(filepath.Dir(payload))
 		return Session{}, err
@@ -254,11 +312,26 @@ func (t Tmux) ensure(ctx context.Context, c Config, profile, project, self strin
 	if !strings.HasPrefix(id, "$") {
 		return Session{}, fmt.Errorf("unexpected tmux session ID")
 	}
-	s := Session{ID: id, Name: name, Profile: profile, Project: project}
-	for _, entry := range [][2]string{{"@tmux_agent_profile", profile}, {"@tmux_agent_project", project}, {ownerKey, ownerValue}} {
+	s := Session{ID: id, Name: name, Profile: profile, Project: project, Host: host}
+	metadata := [][2]string{{"@tmux_agent_profile", profile}, {"@tmux_agent_project", project}}
+	if host != "" {
+		metadata = append(metadata, [2]string{"@tmux_agent_host", host})
+	}
+	for _, entry := range append(metadata, [2]string{ownerKey, ownerValue}) {
 		if _, err := t.output(ctx, "set-option", "-t", id, entry[0], entry[1]); err != nil {
 			t.output(ctx, "kill-session", "-t", id)
 			return Session{}, fmt.Errorf("record session ownership (agent may have exited): %w", err)
+		}
+	}
+	// Publish the short remote name only after the full identity is recorded.
+	// If the name is occupied, the session already has a unique qualified name.
+	if peer != nil {
+		short := remoteSessionName(host, profile, project)
+		_, err := t.output(ctx, "rename-session", "-t", id, strings.ReplaceAll(short, "#", "##"))
+		if err == nil {
+			s.Name = short
+		} else if !duplicateSession(err) {
+			return s, fmt.Errorf("rename remote session: %w", err)
 		}
 	}
 	return s, nil

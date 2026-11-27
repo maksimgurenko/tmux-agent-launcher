@@ -288,7 +288,7 @@ func TestStaleProjectCacheDoesNotBlockPickerAndRefreshSurvivesParentExit(t *test
 	if b, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("picker waited for blocked refresh: %s %v", b, err)
 	}
-	if b, err := os.ReadFile(rows); err != nil || strings.TrimSpace(string(b)) != cfg.Roots[0]+"\n"+project {
+	if b, err := os.ReadFile(rows); err != nil || strings.TrimSpace(string(b)) != cfg.Roots[0]+"\n"+project+"\nEnter path…" {
 		t.Fatalf("picker did not receive cached project: %q %v", b, err)
 	}
 	waitProof(t, proof)

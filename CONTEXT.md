@@ -33,7 +33,7 @@ An existing, running workspace that remains available for reattachment after its
 _Avoid_: Saved conversation
 
 **Session identity**:
-The combination of an agent profile and a canonical project directory that identifies one live session.
+The combination of an agent profile and a canonical project directory that identifies one live session. Remote Codex identities also include the destination host.
 _Avoid_: Session name, conversation ID
 
 **Session name**:

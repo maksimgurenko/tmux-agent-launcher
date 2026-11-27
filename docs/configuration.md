@@ -10,7 +10,7 @@ Existing files are preserved. `--config FILE` selects another file and fails if 
 
 ## Terminal and menu
 
-To theme the Rofi session and project pickers, place a Rasi theme at `$XDG_CONFIG_HOME/tmux-agent-launcher/rofi.rasi` (normally `~/.config/tmux-agent-launcher/rofi.rasi`). If the file is absent, Rofi uses its usual theme.
+To theme the Rofi session, project, and path pickers, place a Rasi theme at `$XDG_CONFIG_HOME/tmux-agent-launcher/rofi.rasi` (normally `~/.config/tmux-agent-launcher/rofi.rasi`). If the file is absent, Rofi uses its usual theme.
 
 Place top-level keys before any TOML table:
 
@@ -134,3 +134,53 @@ tmux-agent-launcher refresh --root ~/projects --max-depth 7
 ```
 
 `--directory` requires `--profile` and bypasses discovery. Repeated `--root` flags replace configured roots. `--tmux-socket FILE` selects another server and preserves it across terminal attachment. `--help` lists all options. Unknown TOML keys, unsupported choices and invalid commands are errors. `doctor` checks configuration and dependencies without starting agents; optional missing agent executables are informational.
+
+## Remote Codex
+
+On the initiating machine, add a peer and supply both named variables in the environment that launches the picker.
+
+```toml
+[[peers]]
+name = "Build machine"
+host = "build.example"
+search_port = 9330
+search_token_env = "BUILD_FOLDER_TOKEN"
+codex_endpoint = "wss://build.example:9443"
+codex_token_env = "BUILD_CODEX_TOKEN"
+profile = "codex"
+```
+
+`host` accepts a hostname or IP address. `profile` defaults to `codex` and can name a custom Codex profile. Set `hide_local_action = true` on a profile dedicated to peer launches to omit its standalone local menu entry. Its command runs locally with its configured arguments and environment. The launcher appends `--remote ENDPOINT --remote-auth-token-env VARIABLE -C REMOTE_DIRECTORY`. Use a Codex CLI with these options. Codex accepts bearer tokens over `wss://` or loopback `ws://`. Include an explicit port for either form.
+
+For a desktop launcher that does not inherit shell variables, set optional `search_token_file` and `codex_token_file` paths in the peer table. Each file supplies that token in place of the environment value. Use an absolute path or `~/` and a private, single-line token file. The TUI receives its token in the named environment variable.
+
+On the destination, use its reachable interface address and the same search port. Supply the matching folder token to the service through its named environment variable.
+
+```toml
+[folder_service]
+listen = "192.0.2.10"
+port = 9330
+token_env = "LOCAL_FOLDER_TOKEN"
+```
+
+The service authenticates requests to list and resolve any directory accessible to its user, including folders outside the project search roots. Folder requests carry a bearer token over HTTP. Use a protected network such as Tailscale or a loopback tunnel for confidentiality. Keep token values out of TOML and command lines.
+
+To run the listener in the foreground, use `tmux-agent-launcher serve-folders [--config FILE]`. For the default user installation, put `LOCAL_FOLDER_TOKEN=...` in a private, mode-0600 `~/.config/tmux-agent-launcher/folders.env` and install the supplied unit from the checkout or extracted release.
+
+```sh
+install -Dm644 examples/tmux-agent-launcher-folders.service \
+  ~/.config/systemd/user/tmux-agent-launcher-folders.service
+systemctl --user daemon-reload
+systemctl --user enable --now tmux-agent-launcher-folders.service
+```
+
+Adjust the unit's executable path for a custom installation prefix. Restart it after changing its configuration or token. To start the user manager at boot before the first login, enable lingering for the service account with `loginctl enable-linger USER`.
+
+Configure the Codex app server independently on the destination. For example, run the following behind a TLS WebSocket reverse proxy serving the configured endpoint. The absolute token file holds the value referenced by the initiating machine's `codex_token_env`.
+
+```sh
+codex app-server --listen ws://127.0.0.1:9444 \
+  --ws-auth capability-token --ws-token-file /absolute/path/to/private-token
+```
+
+Select **New Codex [build.example]** in **Agent session**. The path picker requires Rofi locally, including when another picker handles the first menu. Tab completes a suggestion, `/` lists children and Enter validates the path on the destination. If the host fails, Enter retries the search and Escape cancels. **Attach [codex] [build.example]** reopens the local tmux session without contacting the folder service. For two-way launches, configure an inbound service and an outbound peer on each machine.

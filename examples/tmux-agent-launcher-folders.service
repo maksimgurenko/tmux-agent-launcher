@@ -1,0 +1,13 @@
+[Unit]
+Description=tmux-agent-launcher authenticated folder search
+
+[Service]
+ExecStart=%h/.local/bin/tmux-agent-launcher serve-folders
+EnvironmentFile=-%E/tmux-agent-launcher/folders.env
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+UMask=0077
+
+[Install]
+WantedBy=default.target

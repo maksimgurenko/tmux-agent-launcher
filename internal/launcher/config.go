@@ -13,11 +13,12 @@ import (
 )
 
 type Profile struct {
-	Label   string            `toml:"label"`
-	Enabled *bool             `toml:"enabled"`
-	Command []string          `toml:"command"`
-	Shell   string            `toml:"shell"`
-	Env     map[string]string `toml:"env"`
+	Label           string            `toml:"label"`
+	Enabled         *bool             `toml:"enabled"`
+	HideLocalAction bool              `toml:"hide_local_action"`
+	Command         []string          `toml:"command"`
+	Env             map[string]string `toml:"env"`
+	Shell           string            `toml:"shell"`
 }
 
 func (p Profile) enabled() bool { return p.Enabled == nil || *p.Enabled }
@@ -41,12 +42,14 @@ type Terminal struct {
 	Command []string `toml:"command"`
 }
 type Config struct {
-	Picker       string              `toml:"picker"`
-	Terminal     string              `toml:"terminal"`
-	Presentation string              `toml:"presentation"`
-	Search       Search              `toml:"search"`
-	Profiles     map[string]Profile  `toml:"profiles"`
-	Terminals    map[string]Terminal `toml:"terminals"`
+	FolderService *FolderService      `toml:"folder_service"`
+	Peers         []Peer              `toml:"peers"`
+	Picker        string              `toml:"picker"`
+	Terminal      string              `toml:"terminal"`
+	Presentation  string              `toml:"presentation"`
+	Search        Search              `toml:"search"`
+	Profiles      map[string]Profile  `toml:"profiles"`
+	Terminals     map[string]Terminal `toml:"terminals"`
 }
 
 func defaults() Config {
@@ -114,6 +117,8 @@ func loadConfig(path string, explicit bool) (Config, error) {
 	if m.IsDefined("search", "cache") {
 		c.Search.Cache = raw.Search.Cache
 	}
+	c.Peers = raw.Peers
+	c.FolderService = raw.FolderService
 	for id, p := range raw.Profiles {
 		v := c.Profiles[id]
 		if m.IsDefined("profiles", id, "label") {
@@ -122,6 +127,7 @@ func loadConfig(path string, explicit bool) (Config, error) {
 		if m.IsDefined("profiles", id, "enabled") {
 			v.Enabled = p.Enabled
 		}
+		v.HideLocalAction = p.HideLocalAction
 		if m.IsDefined("profiles", id, "command") {
 			v.Command = p.Command
 		}
@@ -219,7 +225,7 @@ func (c Config) validate() error {
 			return fmt.Errorf("custom terminal requires exactly one standalone {command}")
 		}
 	}
-	return nil
+	return c.validateRemote()
 }
 func contains(a []string, v string) bool {
 	for _, s := range a {

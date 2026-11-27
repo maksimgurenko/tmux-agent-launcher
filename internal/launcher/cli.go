@@ -106,6 +106,8 @@ func run(ctx context.Context, args []string) error {
 	sub := ""
 	if len(args) > 0 {
 		switch args[0] {
+		case "__rofi-path", "__rofi-remote-path":
+			return rofiPathCallback(ctx, args[1:], args[0] == "__rofi-remote-path")
 		case "__refresh-projects":
 			if len(args) != 1 {
 				return fmt.Errorf("invalid project refresh invocation")
@@ -119,8 +121,8 @@ func run(ctx context.Context, args []string) error {
 		case "__ui":
 			insideTerminal = true
 			args = args[1:]
-		case "doctor":
-			sub = "doctor"
+		case "doctor", "serve-folders":
+			sub = args[0]
 			args = args[1:]
 		case "refresh":
 			sub = "refresh"
@@ -155,6 +157,9 @@ func run(ctx context.Context, args []string) error {
 	applyOptions(&c, o)
 	if err := c.validate(); err != nil {
 		return err
+	}
+	if sub == "serve-folders" {
+		return serveFolders(ctx, c.FolderService)
 	}
 	if sub == "refresh" {
 		dirs, err := refreshProjects(ctx, c.Search, true, func(s string) { fmt.Fprintln(os.Stderr, s) })
@@ -246,6 +251,7 @@ func run(ctx context.Context, args []string) error {
 type entry struct {
 	label, profile string
 	session        *Session
+	peer           *Peer
 }
 
 func chooseSession(ctx context.Context, c Config, t Tmux, filter, self string) (Session, error) {
@@ -258,8 +264,13 @@ func chooseSession(ctx context.Context, c Config, t Tmux, filter, self string) (
 		if filter != "" && s.Profile != filter {
 			continue
 		}
-		entries = append(entries, entry{label: "Attach [" + s.Profile + "] " + s.Project, session: &s})
+		label := "Attach [" + s.Profile + "] "
+		if s.Host != "" {
+			label += "[" + s.Host + "] "
+		}
+		entries = append(entries, entry{label: label + s.Project, session: &s})
 	}
+	localLabels := make(map[string]int)
 	for _, id := range sortedProfiles(c) {
 		if filter != "" && id != filter {
 			continue
@@ -274,7 +285,16 @@ func chooseSession(ctx context.Context, c Config, t Tmux, filter, self string) (
 				continue
 			}
 		}
-		entries = append(entries, entry{label: "New [" + id + "] " + p.Label, profile: id})
+		if !p.HideLocalAction {
+			label := "New " + p.Label + " [local]"
+			localLabels[label]++
+			entries = append(entries, entry{label: label, profile: id})
+		}
+		for _, peer := range c.Peers {
+			if peer.profileID() == id {
+				entries = append(entries, entry{label: peer.menuLabel(c.Peers), profile: id, peer: &peer})
+			}
+		}
 	}
 	labels := make([]string, len(entries))
 	if len(entries) == 0 {
@@ -282,6 +302,9 @@ func chooseSession(ctx context.Context, c Config, t Tmux, filter, self string) (
 	}
 	for i, e := range entries {
 		labels[i] = e.label
+		if e.session == nil && e.peer == nil && localLabels[e.label] > 1 {
+			labels[i] += " [" + e.profile + "]"
+		}
 	}
 	i, err := pick(ctx, c.Picker, "Agent session", labels)
 	if err != nil {
@@ -291,6 +314,13 @@ func chooseSession(ctx context.Context, c Config, t Tmux, filter, self string) (
 		return *s, nil
 	}
 	selectedProfile := entries[i].profile
+	if peer := entries[i].peer; peer != nil {
+		path, err := chooseDirectory(ctx, self, peer)
+		if err != nil {
+			return Session{}, err
+		}
+		return t.ensureProject(ctx, c, selectedProfile, path, self, peer)
+	}
 	if c.Search.Mode == "git" {
 		if _, err := exec.LookPath("git"); err != nil {
 			return Session{}, fmt.Errorf("Git discovery requires git")
@@ -300,14 +330,11 @@ func chooseSession(ctx context.Context, c Config, t Tmux, filter, self string) (
 	if err != nil {
 		return Session{}, err
 	}
-	i, err = pick(ctx, c.Picker, "Project", dirs)
+	path, err := pickProject(ctx, c.Picker, c.Search, dirs, self)
 	if err != nil {
 		return Session{}, err
 	}
-	if err := validateProject(ctx, c.Search, dirs[i]); err != nil {
-		return Session{}, err
-	}
-	return t.ensure(ctx, c, selectedProfile, dirs[i], self)
+	return t.ensure(ctx, c, selectedProfile, path, self)
 }
 func initConfig(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {

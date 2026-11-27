@@ -34,7 +34,7 @@ func TestOptionalRofiTheme(t *testing.T) {
 }
 
 func TestPickerCaseInsensitiveMatching(t *testing.T) {
-	labels := []string{"New [test] Example", "new [test] example", "NEW [test] EXAMPLE", "Attach [test] Elsewhere"}
+	labels := []string{"New Example [local]", "new example [local]", "NEW EXAMPLE [local]", "Attach [test] Elsewhere"}
 	for _, backend := range []string{"rofi", "fzf"} {
 		t.Run(backend, func(t *testing.T) {
 			if _, err := exec.LookPath(backend); err != nil {

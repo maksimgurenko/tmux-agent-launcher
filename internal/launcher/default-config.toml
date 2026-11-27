@@ -37,3 +37,19 @@ env = { EXAMPLE_SETTING = "value" }
 # Set terminal = "custom" after adapting this example.
 [terminals.custom]
 command = ["other-terminal", "--app-id", "{app_id}", "--", "{command}"]
+
+# Optional inbound folder search. Supply the named token in the service environment.
+# [folder_service]
+# listen = "192.0.2.10"
+# port = 9330
+# token_env = "LOCAL_FOLDER_TOKEN"
+
+# Optional outbound Codex peer. Token fields name environment variables.
+# [[peers]]
+# name = "Build machine"
+# host = "build.example"
+# search_port = 9330
+# search_token_env = "BUILD_FOLDER_TOKEN"
+# codex_endpoint = "wss://build.example:9443"
+# codex_token_env = "BUILD_CODEX_TOKEN"
+# profile = "codex"
